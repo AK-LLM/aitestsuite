@@ -7,6 +7,6 @@ def security_assessment(endpoint):
     vulnerability_detected = "sensitive" in response.text.lower()
 
     return {
-        "risk_level": "High 🚨" if vulnerability_detected else "Low ✅",
+        "risk_level": "High Risk" if vulnerability_detected else "Low Risk",
         "summary": "Potential prompt injection detected!" if vulnerability_detected else "No injection vulnerability found."
     }
