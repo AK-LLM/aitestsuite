@@ -9,6 +9,6 @@ def robustness_assessment(endpoint):
         stable = False
 
     return {
-        "status": "Passed ✅" if stable else "Failed ⚠️",
+        "status": "Passed" if stable else "Failed",
         "remarks": "Handled large inputs well." if stable else "Failed or timed out under large input."
     }
