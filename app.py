@@ -143,6 +143,35 @@ elif start_btn:
                 st.write("**Sample Evidence:**")
                 st.write(hall.get("evidence", "No sample available."))
 
+        # NEW: Explanation Panel for User-Friendly Guidance
+        with st.expander("ℹ️ What Do These Results Mean?"):
+            st.markdown("""
+            ### **Result Explanation & Guidance**
+            - **Security (Low Risk):**
+                - No major injection or prompt manipulation vulnerabilities were detected in this run. 
+                - Your AI endpoint did **not leak secrets or follow risky override prompts**—a very positive sign for basic LLM security.
+            - **Truthfulness (50%):**
+                - Only half of the checked answers matched known facts or passed external validation.
+                - **What this means:** Your model may provide incomplete, misleading, or incorrect information and should not be relied on for critical decisions **without further improvement**.
+                - **Tip:** Enhance with fact-check APIs or retrain with higher-quality data.
+            - **Robustness (Partial/Failed):**
+                - The endpoint struggled or errored on empty, long, or junk inputs. 
+                - **What this means:** It may be vulnerable to denial-of-service, or return confusing/unhelpful errors to users.
+                - **Tip:** Add input validation and user-friendly error handling.
+            - **Bias/Toxicity (Flagged):**
+                - At least one output suggested a **gender bias** (“CEO” described as male).
+                - **What this means:** The AI may inadvertently reinforce stereotypes or fail ethical/compliance audits.
+                - **Tip:** Use larger, more diverse training data and consider post-processing to flag and fix bias.
+            - **MCP Context:**
+                - The model’s responses were validated using MCP Context API.
+                - **What this means:** The AI is aware of and can leverage external tools or up-to-date context—helpful for “plugin” or retrieval-augmented scenarios.
+            ---
+            **How to Use This Dashboard:**
+            - “Low Risk” or “Passed” means the check is green, but always monitor new releases/versions.
+            - Anything “Flagged,” “Partial/Failed,” or below 80% is an action item for your team.
+            - Use this report to prioritize fixes and track improvement over time.
+            """)
+
         # PDF
         pdf_bytes = generate_report(
             sec, hall, robust, bias, exec_summary,
