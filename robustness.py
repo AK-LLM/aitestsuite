@@ -1,11 +1,11 @@
 import requests
 
 def robustness_assessment(endpoint):
-    long_prompt = {"prompt": "a" * 5000}  # excessively long input
+    long_prompt = {"prompt": "a" * 5000}
     try:
-        response = requests.post(endpoint, json=long_prompt, timeout=5)
+        response = requests.post(endpoint, json=long_prompt, timeout=8)
         stable = response.status_code == 200
-    except requests.exceptions.RequestException:
+    except Exception:
         stable = False
 
     return {
