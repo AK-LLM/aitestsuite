@@ -1,7 +1,6 @@
 from fpdf import FPDF
-from io import BytesIO
 
-def generate_report(sec, hall, robust):
+def generate_report(sec, hall, robust, mcp):
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
@@ -19,7 +18,10 @@ def generate_report(sec, hall, robust):
 
     pdf.cell(0, 10, "Robustness Assessment:", ln=True)
     pdf.multi_cell(0, 10, f"Status: {robust['status']}\nRemarks: {robust['remarks']}")
+    pdf.ln(5)
 
-    # Return PDF as bytes for Streamlit download
-    pdf_bytes = pdf.output(dest='S').encode('latin1')  # Correct way for in-memory buffer
+    pdf.cell(0, 10, "MCP Context Assessment:", ln=True)
+    pdf.multi_cell(0, 10, f"Result: {mcp['context_result']}\nDetails: {mcp.get('details', '')}")
+
+    pdf_bytes = pdf.output(dest='S').encode('latin1')
     return pdf_bytes
