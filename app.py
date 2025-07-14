@@ -39,106 +39,114 @@ with colB:
 with colC:
     load_btn = st.button("Load Previous Session")
 
+# Handle session load/save logic first
 if load_btn:
     loaded = load_session()
-    st.success("Previous session loaded!")
-    st.json(loaded)
-elif save_btn and ai_endpoint:
+    if "error" in loaded:
+        st.warning(loaded["error"])
+    else:
+        st.success("Previous session loaded!")
+        st.json(loaded)
+
+elif save_btn:
     findings = st.session_state.get("last_findings", {})
-    save_session(findings)
-    st.success("Session saved!")
-
-elif start_btn and ai_endpoint:
-    findings = {}
-    # Security Tests
-    if use_security:
-        sec = security_assessment(ai_endpoint)
+    if not findings:
+        st.info("No findings to save yet. Run an assessment first.")
     else:
-        sec = {"risk_level": "Skipped", "summary": "Security tests not run."}
-    # Hallucination/Fact-Check
-    if use_hallucination:
-        hall = truthfulness_check(ai_endpoint, use_api=use_fact_check_api)
-    else:
-        hall = {"score": "Skipped", "remarks": "Hallucination tests not run.", "evidence": "", "consistency": "N/A"}
-    # Robustness
-    if use_robustness:
-        robust = robustness_assessment(ai_endpoint)
-    else:
-        robust = {"status": "Skipped", "remarks": "Robustness tests not run."}
-    # Bias/Toxicity
-    if use_bias_toxicity:
-        bias = bias_test(ai_endpoint)
-    else:
-        bias = {"status": "Skipped", "remarks": "Bias/Toxicity tests not run."}
-    # MCP/Context
-    if use_mcp_context:
-        mcp = mcp_context_test(ai_endpoint)
-    else:
-        mcp = {"context_result": "Skipped (MCP/Context disabled)", "details": ""}
-
-    # Save for session
-    findings = {
-        "sec": sec, "hall": hall, "robust": robust, "bias": bias, "mcp": mcp
-    }
-    st.session_state["last_findings"] = findings
-
-    # Optional Webhook Notification
-    if use_notifications:
-        summary_msg = (
-            f"AI Infosec Dashboard Results\n"
-            f"Security: {sec.get('risk_level')}\n"
-            f"Truthfulness: {hall.get('score')}\n"
-            f"Robustness: {robust.get('status')}\n"
-            f"Bias/Toxicity: {bias.get('status')}\n"
-            f"MCP Context: {mcp.get('context_result')}"
-        )
-        send_notification(summary_msg, use_webhook=True)
-
-    # Executive summary for report
-    exec_summary = (
-        f"Security: {sec.get('risk_level')} | "
-        f"Truthfulness: {hall.get('score')} | "
-        f"Robustness: {robust.get('status')} | "
-        f"Bias/Toxicity: {bias.get('status')} | "
-        f"MCP: {mcp.get('context_result')}"
-    )
-
-    # --- DASHBOARD VISUALS ---
-    st.subheader("📌 Summary of Findings")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    with col1:
-        st.metric("Security", sec.get('risk_level', 'N/A'))
-        for f in sec.get('summary', '').split(';'):
-            st.markdown(f"- {f.strip()}")
-    with col2:
-        st.metric("Truthfulness", hall.get('score', 'N/A'))
-        st.markdown(hall.get('remarks', ''))
-        st.markdown(f"**Consistency:** {hall.get('consistency', 'N/A')}")
-    with col3:
-        st.metric("Robustness", robust.get('status', 'N/A'))
-        for f in robust.get('remarks', '').split(';'):
-            st.markdown(f"- {f.strip()}")
-    with col4:
-        st.metric("Bias/Toxicity", bias.get('status', 'N/A'))
-        for f in bias.get('remarks', '').split(';'):
-            st.markdown(f"- {f.strip()}")
-    with col5:
-        st.metric("MCP Context", mcp.get('context_result', 'N/A'))
-        if mcp.get("details"):
-            st.markdown(mcp["details"])
-
-    if show_evidence:
-        with st.expander("Show Evidence and Details"):
-            st.write("**Sample Evidence:**")
-            st.write(hall.get("evidence", "No sample available."))
-
-    # PDF
-    pdf_bytes = generate_report(
-        sec, hall, robust, bias, exec_summary,
-        hall.get("evidence", "Evidence not available."), mcp
-    )
-    st.download_button("Download Comprehensive Report (PDF)", data=pdf_bytes,
-                       file_name="AI_Infosec_Report.pdf", mime="application/pdf")
+        save_session(findings)
+        st.success("Session saved!")
 
 elif start_btn:
-    st.error("Please provide a valid AI Endpoint URL.")
+    if not ai_endpoint:
+        st.error("Please provide a valid AI Endpoint URL.")
+    else:
+        findings = {}
+
+        # Run enabled tests
+        if use_security:
+            sec = security_assessment(ai_endpoint)
+        else:
+            sec = {"risk_level": "Skipped", "summary": "Security tests not run."}
+
+        if use_hallucination:
+            hall = truthfulness_check(ai_endpoint, use_api=use_fact_check_api)
+        else:
+            hall = {"score": "Skipped", "remarks": "Hallucination tests not run.", "evidence": "", "consistency": "N/A"}
+
+        if use_robustness:
+            robust = robustness_assessment(ai_endpoint)
+        else:
+            robust = {"status": "Skipped", "remarks": "Robustness tests not run."}
+
+        if use_bias_toxicity:
+            bias = bias_test(ai_endpoint)
+        else:
+            bias = {"status": "Skipped", "remarks": "Bias/Toxicity tests not run."}
+
+        if use_mcp_context:
+            mcp = mcp_context_test(ai_endpoint)
+        else:
+            mcp = {"context_result": "Skipped (MCP/Context disabled)", "details": ""}
+
+        findings = {
+            "sec": sec, "hall": hall, "robust": robust, "bias": bias, "mcp": mcp
+        }
+        st.session_state["last_findings"] = findings
+
+        # Optional Webhook Notification
+        if use_notifications:
+            summary_msg = (
+                f"AI Infosec Dashboard Results\n"
+                f"Security: {sec.get('risk_level')}\n"
+                f"Truthfulness: {hall.get('score')}\n"
+                f"Robustness: {robust.get('status')}\n"
+                f"Bias/Toxicity: {bias.get('status')}\n"
+                f"MCP Context: {mcp.get('context_result')}"
+            )
+            send_notification(summary_msg, use_webhook=True)
+
+        # Executive summary for report
+        exec_summary = (
+            f"Security: {sec.get('risk_level')} | "
+            f"Truthfulness: {hall.get('score')} | "
+            f"Robustness: {robust.get('status')} | "
+            f"Bias/Toxicity: {bias.get('status')} | "
+            f"MCP: {mcp.get('context_result')}"
+        )
+
+        # --- DASHBOARD VISUALS ---
+        st.subheader("📌 Summary of Findings")
+        col1, col2, col3, col4, col5 = st.columns(5)
+        with col1:
+            st.metric("Security", sec.get('risk_level', 'N/A'))
+            for f in sec.get('summary', '').split(';'):
+                st.markdown(f"- {f.strip()}")
+        with col2:
+            st.metric("Truthfulness", hall.get('score', 'N/A'))
+            st.markdown(hall.get('remarks', ''))
+            st.markdown(f"**Consistency:** {hall.get('consistency', 'N/A')}")
+        with col3:
+            st.metric("Robustness", robust.get('status', 'N/A'))
+            for f in robust.get('remarks', '').split(';'):
+                st.markdown(f"- {f.strip()}")
+        with col4:
+            st.metric("Bias/Toxicity", bias.get('status', 'N/A'))
+            for f in bias.get('remarks', '').split(';'):
+                st.markdown(f"- {f.strip()}")
+        with col5:
+            st.metric("MCP Context", mcp.get('context_result', 'N/A'))
+            if mcp.get("details"):
+                st.markdown(mcp["details"])
+
+        if show_evidence:
+            with st.expander("Show Evidence and Details"):
+                st.write("**Sample Evidence:**")
+                st.write(hall.get("evidence", "No sample available."))
+
+        # PDF
+        pdf_bytes = generate_report(
+            sec, hall, robust, bias, exec_summary,
+            hall.get("evidence", "Evidence not available."), mcp
+        )
+        st.download_button("Download Comprehensive Report (PDF)", data=pdf_bytes,
+                           file_name="AI_Infosec_Report.pdf", mime="application/pdf")
