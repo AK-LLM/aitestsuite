@@ -47,4 +47,24 @@ def generate_report(results):
             pdf.multi_cell(0, 7, prompt)
             
             risk_badge = safe_text(r.get("risk_badge", ""))
-            ris
+            risk_score = safe_text(r.get("risk_score", ""))
+            pdf.multi_cell(0, 7, f"Risk: {risk_badge} - {risk_score}")
+
+            result = safe_text(r.get("result", ""), 350)
+            pdf.multi_cell(0, 7, f"Result: {result}")
+
+            if "explanation" in r and r["explanation"]:
+                explanation = safe_text(r["explanation"], 350)
+                pdf.multi_cell(0, 7, f"Explanation: {explanation}")
+
+            pdf.ln(2)
+            pdf.set_draw_color(150, 150, 150)
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(2)
+        except Exception as e:
+            # Don't let a bad row crash the PDF
+            pdf.set_font("DejaVu", size=9)
+            pdf.cell(0, 8, f"[Error rendering prompt {idx}: {e}]", ln=1)
+            pdf.ln(2)
+
+    return pdf.output(dest='S').encode('latin-1')
