@@ -1,18 +1,27 @@
-# pdf_report.py (Unicode/emoji safe, fpdf2 + DejaVuSans.ttf)
-from fpdf import FPDF
-from io import BytesIO
 import os
 
+# ---- Font auto-downloader (only runs once) ----
+def ensure_font():
+    font_path = "DejaVuSans.ttf"
+    if not os.path.exists(font_path):
+        import requests
+        url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/version_2_37/ttf/DejaVuSans.ttf"
+        r = requests.get(url)
+        if r.status_code == 200:
+            with open(font_path, "wb") as f:
+                f.write(r.content)
+        else:
+            raise FileNotFoundError("Could not download DejaVuSans.ttf font. Please check your internet connection.")
+    return font_path
+
+# ---- Use this in your PDF function ----
+from fpdf import FPDF
+from io import BytesIO
+
 def generate_report(results):
+    font_path = ensure_font()
     pdf = FPDF()
     pdf.add_page()
-    # Use a Unicode font (ensure DejaVuSans.ttf is in your project directory)
-    font_path = "DejaVuSans.ttf"
-    if not os.path.isfile(font_path):
-        raise FileNotFoundError(
-            f"Font file '{font_path}' not found. Please download DejaVuSans.ttf and place it in your project folder.\n"
-            "Download: https://github.com/dejavu-fonts/dejavu-fonts/blob/master/ttf/DejaVuSans.ttf?raw=true"
-        )
     pdf.add_font("DejaVu", "", font_path, uni=True)
     pdf.set_font("DejaVu", size=12)
     pdf.cell(200, 10, "AI Prompt Assessment Report", ln=True, align="C")
@@ -28,7 +37,6 @@ def generate_report(results):
         if r.get("recommendations"):
             pdf.multi_cell(0, 8, "Recommendations: " + "; ".join([str(e) for e in r["recommendations"]]))
         pdf.ln(4)
-
     buffer = BytesIO()
     pdf.output(buffer)
     pdf_bytes = buffer.getvalue()
