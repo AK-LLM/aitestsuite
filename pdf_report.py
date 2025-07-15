@@ -1,7 +1,6 @@
 from fpdf import FPDF
 import os
 
-# Helper to load Unicode-safe font
 def ensure_font(pdf):
     font_path = "DejaVuSans.ttf"
     if not os.path.exists(font_path):
@@ -10,10 +9,21 @@ def ensure_font(pdf):
         pdf.add_font('DejaVu', '', font_path, uni=True)
     pdf.set_font("DejaVu", size=10)
 
-def safe_text(text, limit=150):
-    """Truncate and clean text for PDF cell."""
-    s = str(text).replace('\n', ' ').replace('\r', ' ')
-    return s[:limit] + ('...' if len(s) > limit else '')
+def safe_text(text, limit=120, fallback="N/A"):
+    """Prepare text for safe PDF rendering."""
+    if text is None:
+        return fallback
+    try:
+        s = str(text)
+        # Remove excessive whitespace and newlines
+        s = s.replace('\n', ' ').replace('\r', ' ')
+        # Remove any control characters FPDF can't handle
+        s = ''.join(ch if 32 <= ord(ch) <= 126 or ch in "–—’‘”“…" else '?' for ch in s)
+        if len(s) > limit:
+            s = s[:limit] + "..."
+        return s
+    except Exception:
+        return fallback
 
 def generate_report(results):
     pdf = FPDF()
@@ -29,27 +39,12 @@ def generate_report(results):
     pdf.cell(0, 10, "Summary of Results", ln=1)
 
     for idx, r in enumerate(results, 1):
-        pdf.set_font("DejaVu", size=10)
-        pdf.cell(0, 8, f"Prompt {idx}:", ln=1)
-        pdf.set_font("DejaVu", size=9)
-        pdf.multi_cell(0, 7, safe_text(r.get("prompt", "N/A"), 300))
-        
-        pdf.set_font("DejaVu", size=9)
-        risk_badge = safe_text(r.get("risk_badge", "N/A"))
-        risk_score = safe_text(r.get("risk_score", "N/A"))
-        pdf.multi_cell(0, 7, f"Risk: {risk_badge} – {risk_score}")
-        
-        result = safe_text(r.get("result", "N/A"), 600)
-        pdf.multi_cell(0, 7, f"Result: {result}")
-        
-        if "explanation" in r:
-            pdf.multi_cell(0, 7, "Explanation: " + safe_text(r["explanation"], 600))
-        
-        pdf.ln(2)
-        pdf.set_draw_color(150, 150, 150)
-        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-        pdf.ln(2)
-
-    # Export PDF to bytes for Streamlit
-    return pdf.output(dest='S').encode('latin-1')
-
+        try:
+            pdf.set_font("DejaVu", size=10)
+            pdf.cell(0, 8, f"Prompt {idx}:", ln=1)
+            pdf.set_font("DejaVu", size=9)
+            prompt = safe_text(r.get("prompt", ""), 250)
+            pdf.multi_cell(0, 7, prompt)
+            
+            risk_badge = safe_text(r.get("risk_badge", ""))
+            ris
