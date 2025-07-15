@@ -1,5 +1,8 @@
 import streamlit as st
 import json
+import pandas as pd              # <-- FIXED: Add this line
+from datetime import datetime    # <-- Optional if you want to avoid pandas
+
 from security import security_assessment
 from hallucination import truthfulness_check
 from robustness import robustness_assessment
@@ -8,7 +11,13 @@ from mcp_test import mcp_context_test
 from session_utils import save_session, load_session
 from pdf_report import generate_report
 from webhook_utils import send_notification
-from utils import show_help, load_prompt_bank, parse_uploaded_prompts, deduplicate_prompts, filter_prompts_by_tag
+from utils import (
+    show_help,
+    load_prompt_bank,
+    parse_uploaded_prompts,
+    deduplicate_prompts,
+    filter_prompts_by_tag,
+)
 from prompt_banks import add_prompt, remove_prompt
 
 st.set_page_config(page_title="AI Security Dashboard", layout="wide")
@@ -17,7 +26,9 @@ st.title("🔐 AI Infosec & Hallucination Dashboard (Wave 1.1 Ultra)")
 # Sidebar: prompt domain selection & management
 st.sidebar.header("Prompt Domains")
 all_domains = list(load_prompt_bank().keys())
-selected_domains = [d for d in all_domains if st.sidebar.checkbox(d, value=(d in ["Security", "Hallucination", "Robustness"]))]
+selected_domains = [
+    d for d in all_domains if st.sidebar.checkbox(d, value=(d in ["Security", "Hallucination", "Robustness"]))
+]
 st.sidebar.markdown("---")
 
 # Optional prompt editor
@@ -26,36 +37,51 @@ if st.sidebar.checkbox("Edit Prompt Banks"):
     prompts = load_prompt_bank(edit_domain)
     st.sidebar.write("Prompts in selected domain:")
     for i, p in enumerate(prompts):
-        st.sidebar.markdown(f"{i+1}. {p['prompt'][:50]} - _{p.get('desc','')}_ [tags: {', '.join(p.get('tags', []))}]")
+        st.sidebar.markdown(
+            f"{i+1}. {p['prompt'][:50]} - _{p.get('desc','')}_ [tags: {', '.join(p.get('tags', []))}]"
+        )
     with st.sidebar.form(key="add_prompt_form"):
         new_prompt = st.text_area("Add new prompt")
         new_desc = st.text_input("Description")
         new_tags = st.text_input("Tags (comma-separated)")
         submitted = st.form_submit_button("Add Prompt")
         if submitted and new_prompt.strip():
-            add_prompt(edit_domain, new_prompt.strip(), new_desc.strip(), [t.strip() for t in new_tags.split(",") if t.strip()])
+            add_prompt(
+                edit_domain,
+                new_prompt.strip(),
+                new_desc.strip(),
+                [t.strip() for t in new_tags.split(",") if t.strip()],
+            )
             st.experimental_rerun()
-    remove_idx = st.sidebar.number_input("Remove prompt #", min_value=1, max_value=len(prompts), value=1)
+    remove_idx = st.sidebar.number_input(
+        "Remove prompt #", min_value=1, max_value=len(prompts), value=1
+    )
     if st.sidebar.button("Remove Selected Prompt"):
         if prompts:
-            remove_prompt(edit_domain, prompts[remove_idx-1]['prompt'])
+            remove_prompt(edit_domain, prompts[remove_idx - 1]["prompt"])
             st.experimental_rerun()
 st.sidebar.markdown("---")
 
 # Upload
 uploaded_prompts = []
-uploaded_file = st.sidebar.file_uploader("Upload Custom Prompts (txt/csv)", type=['txt', 'csv'])
+uploaded_file = st.sidebar.file_uploader(
+    "Upload Custom Prompts (txt/csv)", type=["txt", "csv"]
+)
 if uploaded_file:
     uploaded_prompts = parse_uploaded_prompts(uploaded_file)
     st.sidebar.success(f"{len(uploaded_prompts)} prompts uploaded.")
 
 # Tag filter
-all_tags = sorted({tag for d in all_domains for p in load_prompt_bank(d) for tag in p.get("tags",[])})
+all_tags = sorted(
+    {tag for d in all_domains for p in load_prompt_bank(d) for tag in p.get("tags", [])}
+)
 filter_tag = st.sidebar.selectbox("Filter by Tag", [""] + all_tags)
 if st.sidebar.button("Show Help & Workflow"):
     show_help()
 
-ai_endpoint = st.text_input("Enter AI Model Endpoint URL:", placeholder="https://your-ai-api.com/predict")
+ai_endpoint = st.text_input(
+    "Enter AI Model Endpoint URL:", placeholder="https://your-ai-api.com/predict"
+)
 
 # Gather all prompts
 all_prompts = []
@@ -69,7 +95,7 @@ if filter_tag:
 
 st.markdown(f"**{len(all_prompts)} prompts loaded for this run.**")
 
-colA, colB, colC, colD = st.columns([2,1,1,1])
+colA, colB, colC, colD = st.columns([2, 1, 1, 1])
 with colA:
     start_btn = st.button("Run Prompts")
 with colB:
@@ -195,8 +221,9 @@ elif start_btn:
                 history = json.load(f)
         except Exception:
             history = []
+        # You can use pandas or datetime for the timestamp
         history.append({
-            "timestamp": str(pd.Timestamp.now()),
+            "timestamp": str(pd.Timestamp.now()),   # <-- Or use: datetime.now().isoformat()
             "results": results,
             "count": len(results)
         })
@@ -207,5 +234,3 @@ elif start_btn:
         st.download_button("Download Results (PDF)", data=generate_report(results), file_name="AI_Prompt_Assessment.pdf")
         st.download_button("Download Results (CSV)", data=pd.DataFrame(results).to_csv(index=False), file_name="results.csv")
         st.download_button("Download Results (JSON)", data=json.dumps(results, indent=2), file_name="results.json")
-
-# --- End of app.py ---
