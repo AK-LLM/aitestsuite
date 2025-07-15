@@ -1,24 +1,43 @@
+from prompt_banks import get_prompt_bank, add_prompt, remove_prompt
 import streamlit as st
+import pandas as pd
 
 def show_help():
-    st.sidebar.title("🛠️ Workflow Guide & Help")
-    st.sidebar.markdown("""
-    **Step-by-step Workflow:**
-    1. Enter your AI model's API endpoint URL.
-    2. Configure feature toggles in the sidebar:
-        - **Fact-Checking API**: Validate truthfulness with external sources (or run local-only check).
-        - **Notifications**: Send results to Slack/Jira, or bypass for privacy.
-        - **MCP Context**: Check with external context (or local bypass).
-    3. Click **Start Assessment**.
-    4. Review summary metrics.
-    5. Download the PDF report.
-
-    **Tool Descriptions:**
-    - **Security Test**: Checks prompt injection.
-    - **Truthfulness Test**: Evaluates factual accuracy.
-    - **Robustness Test**: Tests model stability.
-    - **MCP Context Test**: Evaluates external knowledge/context use.
-
-    **Support:**  
-    Contact your AI Infosec team for more help or enhancements.
+    st.info("""
+    **Help & Workflow**
+    - Use the sidebar to select or edit prompt banks, upload prompts, and tag prompts by risk or type.
+    - Run all or selected prompts for risk assessment.
+    - Results show per-prompt evidence, risk, and a custom recommendation.
+    - Download results as PDF, CSV, or JSON. Re-run or replay past sessions for regression analysis.
     """)
+
+def load_prompt_bank(domain=None):
+    return get_prompt_bank(domain)
+
+def parse_uploaded_prompts(uploaded_file):
+    try:
+        df = pd.read_csv(uploaded_file)
+        prompts = []
+        for _, row in df.iterrows():
+            prompts.append({
+                "prompt": row['prompt'],
+                "desc": row.get('desc', ""),
+                "tags": row.get('tags', "").split(",") if 'tags' in row and isinstance(row['tags'], str) else []
+            })
+        return prompts
+    except Exception:
+        uploaded_file.seek(0)
+        return [{"prompt": line.strip(), "desc": "", "tags": []} for line in uploaded_file if line.strip()]
+
+def deduplicate_prompts(prompts):
+    seen = set()
+    unique = []
+    for p in prompts:
+        key = (p['prompt'], p.get('desc', ''))
+        if key not in seen:
+            seen.add(key)
+            unique.append(p)
+    return unique
+
+def filter_prompts_by_tag(prompts, tag):
+    return [p for p in prompts if tag in p.get('tags', [])]
