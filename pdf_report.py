@@ -1,4 +1,4 @@
-# pdf_report.py (Unicode-safe, for fpdf2)
+# pdf_report.py (requires fpdf2)
 
 from fpdf import FPDF
 from io import BytesIO
@@ -6,9 +6,6 @@ from io import BytesIO
 def generate_report(results):
     pdf = FPDF()
     pdf.add_page()
-    # Use a font that supports Unicode. 'Arial Unicode MS' is universal if available,
-    # or fallback to DejaVu. fpdf2 supports custom TTF fonts if needed.
-    # For simplicity, we'll use the default and let fpdf2 handle Unicode.
     pdf.set_font("Arial", size=12)
     pdf.cell(200, 10, "AI Prompt Assessment Report", ln=True, align="C")
     pdf.ln(10)
@@ -23,7 +20,8 @@ def generate_report(results):
         if r.get("recommendations"):
             pdf.multi_cell(0, 8, "Recommendations: " + "; ".join([str(e) for e in r["recommendations"]]))
         pdf.ln(4)
-
-    # Output PDF to bytes (fpdf2 handles Unicode with utf-8)
-    pdf_bytes = pdf.output(dest="S").encode("utf-8")
+    # Write to BytesIO
+    buffer = BytesIO()
+    pdf.output(buffer)
+    pdf_bytes = buffer.getvalue()
     return pdf_bytes
