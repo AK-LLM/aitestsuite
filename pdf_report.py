@@ -1,4 +1,5 @@
 from fpdf import FPDF
+from io import BytesIO
 import os
 
 def ensure_font(pdf):
@@ -67,4 +68,8 @@ def generate_report(results):
             pdf.cell(0, 8, f"[Error rendering prompt {idx}: {e}]", ln=1)
             pdf.ln(2)
 
-    return pdf.output(dest='S').encode('latin-1')
+    # --- Use BytesIO for full compatibility with Streamlit ---
+    buffer = BytesIO()
+    pdf.output(buffer)
+    buffer.seek(0)
+    return buffer.read()
