@@ -1,12 +1,20 @@
-# pdf_report.py (requires fpdf2)
-
+# pdf_report.py (Unicode/emoji safe, fpdf2 + DejaVuSans.ttf)
 from fpdf import FPDF
 from io import BytesIO
+import os
 
 def generate_report(results):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", size=12)
+    # Use a Unicode font (ensure DejaVuSans.ttf is in your project directory)
+    font_path = "DejaVuSans.ttf"
+    if not os.path.isfile(font_path):
+        raise FileNotFoundError(
+            f"Font file '{font_path}' not found. Please download DejaVuSans.ttf and place it in your project folder.\n"
+            "Download: https://github.com/dejavu-fonts/dejavu-fonts/blob/master/ttf/DejaVuSans.ttf?raw=true"
+        )
+    pdf.add_font("DejaVu", "", font_path, uni=True)
+    pdf.set_font("DejaVu", size=12)
     pdf.cell(200, 10, "AI Prompt Assessment Report", ln=True, align="C")
     pdf.ln(10)
     for i, r in enumerate(results, 1):
@@ -20,7 +28,7 @@ def generate_report(results):
         if r.get("recommendations"):
             pdf.multi_cell(0, 8, "Recommendations: " + "; ".join([str(e) for e in r["recommendations"]]))
         pdf.ln(4)
-    # Write to BytesIO
+
     buffer = BytesIO()
     pdf.output(buffer)
     pdf_bytes = buffer.getvalue()
