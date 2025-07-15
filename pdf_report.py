@@ -1,43 +1,55 @@
+from fpdf import FPDF
 import os
 
-# ---- Font auto-downloader (only runs once) ----
-def ensure_font():
+# Helper to load Unicode-safe font
+def ensure_font(pdf):
     font_path = "DejaVuSans.ttf"
     if not os.path.exists(font_path):
-        import requests
-        url = "https://github.com/dejavu-fonts/dejavu-fonts/raw/version_2_37/ttf/DejaVuSans.ttf"
-        r = requests.get(url)
-        if r.status_code == 200:
-            with open(font_path, "wb") as f:
-                f.write(r.content)
-        else:
-            raise FileNotFoundError("Could not download DejaVuSans.ttf font. Please check your internet connection.")
-    return font_path
+        raise FileNotFoundError("DejaVuSans.ttf font not found. Please add it to your app directory.")
+    if "DejaVu" not in pdf.fonts:
+        pdf.add_font('DejaVu', '', font_path, uni=True)
+    pdf.set_font("DejaVu", size=10)
 
-# ---- Use this in your PDF function ----
-from fpdf import FPDF
-from io import BytesIO
+def safe_text(text, limit=150):
+    """Truncate and clean text for PDF cell."""
+    s = str(text).replace('\n', ' ').replace('\r', ' ')
+    return s[:limit] + ('...' if len(s) > limit else '')
 
 def generate_report(results):
-    font_path = ensure_font()
     pdf = FPDF()
     pdf.add_page()
-    pdf.add_font("DejaVu", "", font_path, uni=True)
-    pdf.set_font("DejaVu", size=12)
-    pdf.cell(200, 10, "AI Prompt Assessment Report", ln=True, align="C")
-    pdf.ln(10)
-    for i, r in enumerate(results, 1):
-        pdf.multi_cell(0, 10, f"{i}. Prompt: {r['prompt']}")
-        pdf.multi_cell(0, 8, f"Risk: {r.get('risk_badge','N/A')} - {r.get('risk_score','N/A')}")
-        for k in ["security", "hallucination", "robustness", "bias", "mcp"]:
-            if k in r and isinstance(r[k], dict):
-                pdf.multi_cell(0, 8, f"{k.capitalize()}: {r[k]}")
-        if r.get("evidence"):
-            pdf.multi_cell(0, 8, "Evidence: " + "; ".join([str(e) for e in r["evidence"]]))
-        if r.get("recommendations"):
-            pdf.multi_cell(0, 8, "Recommendations: " + "; ".join([str(e) for e in r["recommendations"]]))
-        pdf.ln(4)
-    buffer = BytesIO()
-    pdf.output(buffer)
-    pdf_bytes = buffer.getvalue()
-    return pdf_bytes
+    ensure_font(pdf)
+    pdf.set_auto_page_break(auto=True, margin=15)
+
+    pdf.set_font("DejaVu", size=16)
+    pdf.cell(0, 12, "AI Prompt Security & Hallucination Assessment", ln=1, align='C')
+    pdf.ln(5)
+
+    pdf.set_font("DejaVu", size=11)
+    pdf.cell(0, 10, "Summary of Results", ln=1)
+
+    for idx, r in enumerate(results, 1):
+        pdf.set_font("DejaVu", size=10)
+        pdf.cell(0, 8, f"Prompt {idx}:", ln=1)
+        pdf.set_font("DejaVu", size=9)
+        pdf.multi_cell(0, 7, safe_text(r.get("prompt", "N/A"), 300))
+        
+        pdf.set_font("DejaVu", size=9)
+        risk_badge = safe_text(r.get("risk_badge", "N/A"))
+        risk_score = safe_text(r.get("risk_score", "N/A"))
+        pdf.multi_cell(0, 7, f"Risk: {risk_badge} – {risk_score}")
+        
+        result = safe_text(r.get("result", "N/A"), 600)
+        pdf.multi_cell(0, 7, f"Result: {result}")
+        
+        if "explanation" in r:
+            pdf.multi_cell(0, 7, "Explanation: " + safe_text(r["explanation"], 600))
+        
+        pdf.ln(2)
+        pdf.set_draw_color(150, 150, 150)
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(2)
+
+    # Export PDF to bytes for Streamlit
+    return pdf.output(dest='S').encode('latin-1')
+
