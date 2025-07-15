@@ -1,66 +1,26 @@
-from fpdf import FPDF
+# pdf_report.py
 
-def generate_report(sec, hall, robust, bias, exec_summary, evidence, mcp):
+from fpdf import FPDF
+from io import BytesIO
+
+def generate_report(results):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", 'B', 16)
-    pdf.cell(0, 10, "AI Infosec & Hallucination Report", ln=True, align='C')
+    pdf.set_font("Arial", size=12)
+    pdf.cell(200, 10, "AI Prompt Assessment Report", ln=True, align="C")
     pdf.ln(10)
-    pdf.set_font("Arial", size=12)
+    for i, r in enumerate(results, 1):
+        pdf.multi_cell(0, 10, f"{i}. Prompt: {r['prompt']}")
+        pdf.multi_cell(0, 8, f"Risk: {r.get('risk_badge','N/A')} - {r.get('risk_score','N/A')}")
+        for k in ["security", "hallucination", "robustness", "bias", "mcp"]:
+            if k in r and isinstance(r[k], dict):
+                pdf.multi_cell(0, 8, f"{k.capitalize()}: {r[k]}")
+        if r.get("evidence"):
+            pdf.multi_cell(0, 8, "Evidence: " + "; ".join(r["evidence"]))
+        if r.get("recommendations"):
+            pdf.multi_cell(0, 8, "Recommendations: " + "; ".join(r["recommendations"]))
+        pdf.ln(4)
 
-    # Executive summary
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Executive Summary:", ln=True)
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, exec_summary or "No executive summary.")
-    pdf.ln(4)
-
-    # Security
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Security Assessment:", ln=True)
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, f"Risk: {sec.get('risk_level', 'N/A')}")
-    pdf.multi_cell(0, 10, f"Details: {sec.get('summary', 'N/A')}")
-    pdf.ln(2)
-
-    # Hallucination
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Hallucination Assessment:", ln=True)
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, f"Truthfulness Score: {hall.get('score', 'N/A')}")
-    pdf.multi_cell(0, 10, f"Remarks: {hall.get('remarks', 'N/A')}")
-    pdf.ln(2)
-
-    # Robustness
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Robustness Assessment:", ln=True)
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, f"Status: {robust.get('status', 'N/A')}")
-    pdf.multi_cell(0, 10, f"Remarks: {robust.get('remarks', 'N/A')}")
-    pdf.ln(2)
-
-    # Bias/Toxicity
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Bias/Toxicity Assessment:", ln=True)
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, f"Status: {bias.get('status', 'N/A')}")
-    pdf.multi_cell(0, 10, f"Remarks: {bias.get('remarks', 'N/A')}")
-    pdf.ln(2)
-
-    # MCP Context
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "MCP/Context Assessment:", ln=True)
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, f"Result: {mcp.get('context_result', 'N/A')}")
-    pdf.multi_cell(0, 10, f"Details: {mcp.get('details', '')}")
-    pdf.ln(2)
-
-    # Evidence
-    pdf.set_font("Arial", 'B', 12)
-    pdf.cell(0, 10, "Evidence Log:", ln=True)
-    pdf.set_font("Arial", size=12)
-    pdf.multi_cell(0, 10, evidence or "No evidence captured.")
-
-    # Return as bytes
-    pdf_bytes = pdf.output(dest='S').encode('latin1')
+    # Output PDF to bytes
+    pdf_bytes = pdf.output(dest='S').encode('latin-1')
     return pdf_bytes
