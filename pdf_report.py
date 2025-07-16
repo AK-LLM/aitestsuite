@@ -40,25 +40,26 @@ class PDF(FPDF):
         self.set_font("DejaVu", "B", 12)
         self.cell(0, 8, f"Prompt {idx+1}:", ln=True)
         self.set_font("DejaVu", "", 11)
-        self.multi_cell(0, 7, clean(data.get("prompt")))
+        self.multi_cell(0, 7, clean(data.get("prompt", "-")))
         self.ln(1)
         # Show the AI's response/result
-        if "result" in data:
-            self.set_font("DejaVu", "I", 10)
-            self.multi_cell(0, 6, "AI Response:\n" + clean(data["result"]))
-            self.ln(1)
-        # Add risk/evidence/recommendations if present
-        if "risk_score" in data or "risk_badge" in data:
-            self.set_font("DejaVu", "B", 10)
-            badge = clean(data.get("risk_badge", "N/A"))
-            score = clean(data.get("risk_score", "N/A"))
+        self.set_font("DejaVu", "I", 10)
+        self.multi_cell(0, 6, "AI Response:\n" + clean(data.get("result", "-")))
+        self.ln(1)
+        # Add risk/evidence/recommendations if present (always write valid string)
+        self.set_font("DejaVu", "B", 10)
+        badge = clean(data.get("risk_badge", "-"))
+        score = clean(data.get("risk_score", "-"))
+        if badge != "-" or score != "-":
             self.cell(0, 7, f"Risk: {badge} - {score}", ln=True)
-        if "evidence" in data:
+        evidence = clean(data.get("evidence", "-"))
+        if evidence != "-":
             self.set_font("DejaVu", "", 10)
-            self.multi_cell(0, 6, "Evidence: " + clean(data["evidence"]))
-        if "recommendations" in data:
+            self.multi_cell(0, 6, "Evidence: " + evidence)
+        recommendations = clean(data.get("recommendations", "-"))
+        if recommendations != "-":
             self.set_font("DejaVu", "", 10)
-            self.multi_cell(0, 6, "Recommendations: " + clean(data["recommendations"]))
+            self.multi_cell(0, 6, "Recommendations: " + recommendations)
         self.ln(2)
 
 def generate_report(results):
