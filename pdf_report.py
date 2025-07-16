@@ -4,6 +4,13 @@ import os
 FONT_PATH = os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf")
 
 class PDF(FPDF):
+    def __init__(self):
+        super().__init__()
+        # Register fonts right away so header works
+        self.add_font("DejaVu", "", FONT_PATH, uni=True)
+        self.add_font("DejaVu", "B", FONT_PATH, uni=True)
+        self.add_font("DejaVu", "I", FONT_PATH, uni=True)
+
     def header(self):
         self.set_font("DejaVu", "B", 16)
         self.cell(0, 10, "AI Prompt Security & Hallucination Assessment", 0, 1, "C")
@@ -66,23 +73,16 @@ class PDF(FPDF):
         self.ln(3)
 
 def ensure_font():
-    # Check if font exists locally, otherwise throw error.
     if not os.path.exists(FONT_PATH):
         raise FileNotFoundError("DejaVuSans.ttf not found in project folder.")
     return FONT_PATH
 
 def generate_report(results):
-    font_path = ensure_font()
+    ensure_font()
     pdf = PDF()
     pdf.add_page()
-    pdf.add_font("DejaVu", "", font_path, uni=True)
-    pdf.add_font("DejaVu", "B", font_path, uni=True)
-    pdf.add_font("DejaVu", "I", font_path, uni=True)
-    
     pdf.section_title("Summary of Results")
     pdf.ln(1)
-    
     for idx, res in enumerate(results):
         pdf.result_block(res, idx)
-    
     return pdf.output(dest="S").encode("latin-1")
