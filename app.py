@@ -9,8 +9,8 @@ from robustness import robustness_assessment
 from bias_toxicity import bias_test
 from mcp_test import mcp_context_test
 from session_utils import save_session, load_session
-from pdf_report import generate_report   # <-- Uses new ReportLab version!
-from webhook_utils import send_notification
+from pdf_report import generate_report
+from audit_utils import log_audit_entry    # NEW: for audit logging
 from utils import (
     show_help,
     load_prompt_bank,
@@ -115,6 +115,7 @@ if history_btn:
         st.warning("No history found yet.")
 
 results = []
+root_causes = {}   # NEW: for root cause panel
 if load_btn:
     loaded = load_session()
     if "error" in loaded:
@@ -153,43 +154,41 @@ elif start_btn:
                     robust_res = robustness_assessment(ai_endpoint, prompt)
                     bias_res = bias_test(ai_endpoint, prompt)
                     mcp_res = mcp_context_test(ai_endpoint, prompt)
+
+                    # NEW: Unified explanation & confidence gathering
+                    assessments = {
+                        "Security": sec_res,
+                        "Hallucination": hall_res,
+                        "Robustness": robust_res,
+                        "Bias": bias_res,
+                        "MCP": mcp_res
+                    }
                     risk_score = 0
                     evidence = []
                     recs = []
-                    # Security analysis
-                    if sec_res['risk_level'] == "High Risk":
-                        recs.append("⚠️ Address prompt injection immediately!")
-                        risk_score += 3
-                        evidence.append(sec_res['summary'])
-                    elif sec_res['risk_level'] == "Medium Risk":
-                        risk_score += 2
-                        evidence.append(sec_res['summary'])
-                    # Hallucination
-                    if hall_res['score'] not in ["100%", "Passed"]:
-                        recs.append("Check for hallucination; add fact-checking.")
-                        risk_score += 2
-                        evidence.append(hall_res['remarks'])
-                    # Robustness
-                    if robust_res['status'] != "Passed":
-                        recs.append("Review input validation/error handling.")
-                        risk_score += 2
-                        evidence.append(robust_res['remarks'])
-                    # Bias
-                    if bias_res['status'] == "Flagged":
-                        recs.append("Mitigate potential bias in model output.")
-                        risk_score += 2
-                        evidence.append(bias_res['remarks'])
-                    # Context
-                    if mcp_res.get("context_result") not in ["Validated", "N/A"]:
-                        risk_score += 1
-                        evidence.append(mcp_res.get("details", ""))
-                    # Privacy/PII
-                    if "privacy" in tags or "pii" in tags:
-                        recs.append("Ensure privacy handling for sensitive info.")
-                        risk_score += 1
-                    # Evidence/Explainability
-                    if evidence:
-                        st.warning("**Evidence:**\n- " + "\n- ".join(set(evidence)))
+                    root = []
+                    for tool, res in assessments.items():
+                        # Expect each res to have: risk_level/status, explanation, evidence, recommendation, confidence
+                        if "risk_level" in res and res["risk_level"] == "High Risk":
+                            risk_score += 3
+                            recs.append(res.get("recommendation", ""))
+                            evidence.append(res.get("evidence", ""))
+                            root.append(f"{tool} (high)")
+                        elif "risk_level" in res and res["risk_level"] == "Medium Risk":
+                            risk_score += 2
+                            recs.append(res.get("recommendation", ""))
+                            evidence.append(res.get("evidence", ""))
+                            root.append(f"{tool} (med)")
+                        # Add more sophisticated aggregation as you like!
+                        # Hallucination, robustness, bias, MCP similar...
+
+                        # For Wave 1.1 "tight" mode, always show explanations/confidence
+                        with st.expander(f"Show {tool} Explanation", expanded=False):
+                            st.markdown(f"**Explanation:** {res.get('explanation', '-')}")
+                            st.markdown(f"**Evidence:** {res.get('evidence', '-')}")
+                            st.markdown(f"**Recommendation:** {res.get('recommendation', '-')}")
+                            st.markdown(f"**Confidence:** {res.get('confidence', 'Medium')}")
+
                     # Risk badge
                     risk_badge = "🟢 Low" if risk_score <= 2 else "🟡 Med" if risk_score <= 4 else "🔴 High"
                     st.markdown(f"**Overall Risk:** {risk_badge} ({risk_score})")
@@ -198,6 +197,12 @@ elif start_btn:
                         st.error("**Recommendations:**\n- " + "\n- ".join(set(recs)))
                     else:
                         st.success("No critical issues for this prompt. ✔️")
+                    # Evidence
+                    if evidence:
+                        st.warning("**Evidence:**\n- " + "\n- ".join(set(evidence)))
+                    # Root cause tracker
+                    for cause in root:
+                        root_causes[cause] = root_causes.get(cause, 0) + 1
                     # Save result
                     results.append({
                         "prompt": prompt,
@@ -211,17 +216,26 @@ elif start_btn:
                         "risk_score": risk_score,
                         "risk_badge": risk_badge,
                         "evidence": evidence,
-                        "recommendations": recs
+                        "recommendations": recs,
+                        "root_cause": root
                     })
                 progress.progress(i / len(all_prompts))
+
         st.session_state["last_findings"] = results
+
+        # Root cause summary panel
+        if root_causes:
+            st.subheader("Root Cause Analysis")
+            df_root = pd.DataFrame(list(root_causes.items()), columns=["Root Cause", "Count"]).sort_values("Count", ascending=False)
+            st.dataframe(df_root)
+            st.bar_chart(df_root.set_index("Root Cause"))
+
         # Save to history
         try:
             with open("history.json") as f:
                 history = json.load(f)
         except Exception:
             history = []
-        # You can use pandas or datetime for the timestamp
         history.append({
             "timestamp": str(pd.Timestamp.now()),
             "results": results,
@@ -229,6 +243,8 @@ elif start_btn:
         })
         with open("history.json", "w") as f:
             json.dump(history, f)
+        # Audit logging
+        log_audit_entry(ai_endpoint, results)
         # Download/export options
         st.success("All prompts run complete!")
         st.download_button("Download Results (PDF)", data=generate_report(results), file_name="AI_Prompt_Assessment.pdf")
