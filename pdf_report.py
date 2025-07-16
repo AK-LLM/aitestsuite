@@ -17,67 +17,59 @@ def clean(text):
     return t if t else "-"
 
 class PromptReportPDF(FPDF):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.has_dejavu = False
-        if os.path.exists(FONT_PATH):
-            try:
-                self.add_font("DejaVu", "", FONT_PATH, uni=True)
-                self.add_font("DejaVu", "B", FONT_PATH, uni=True)
-                self.has_dejavu = True
-            except Exception as e:
-                print("Warning: Could not load DejaVuSans.ttf, using default font. Error:", e)
-        else:
-            print("Warning: DejaVuSans.ttf not found, using default font.")
-
     def header(self):
-        if self.has_dejavu:
-            self.set_font("DejaVu", "B", 16)
-        else:
-            self.set_font("Arial", "B", 16)
-        self.cell(0, 10, "AI Prompt Security & Hallucination Assessment", ln=True, align="C")
-        self.ln(6)
+        self.set_font("Arial", "B", 16)
+        self.cell(0, 12, "AI Prompt Security & Hallucination Assessment", 0, 1, "C")
+        self.ln(4)
 
     def footer(self):
         self.set_y(-15)
-        if self.has_dejavu:
-            self.set_font("DejaVu", "", 9)
-        else:
-            self.set_font("Arial", "", 9)
-        self.cell(0, 10, f"Page {self.page_no()}", align="C")
+        self.set_font("Arial", "I", 9)
+        self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
 
-    def result_block(self, data, idx):
-        fontname = "DejaVu" if self.has_dejavu else "Arial"
-        # Section header
-        self.set_font(fontname, "B", 12)
-        self.cell(0, 8, f"Prompt {idx + 1}:", ln=True)
-        # Prompt
-        self.set_font(fontname, "", 11)
-        self.multi_cell(0, 7, clean(data.get("prompt")))
+    def add_prompt_result(self, idx, prompt, result):
+        self.set_font("Arial", "B", 12)
+        self.cell(0, 8, f"Prompt {idx+1}:", ln=1)
+        self.set_font("Arial", "", 11)
+        self.multi_cell(0, 7, clean(prompt))
         self.ln(1)
-        # Output test result
-        self.set_font(fontname, "B", 10)
-        self.multi_cell(0, 6, "Test Result: " + clean(data.get("result")))
-        # Output risk, evidence, recommendations if present
-        for key in ["risk", "evidence", "recommendations"]:
-            val = data.get(key)
-            if val:
-                self.set_font(fontname, "B", 10)
-                self.cell(0, 6, f"{key.capitalize()}:", ln=True)
-                self.set_font(fontname, "", 10)
-                self.multi_cell(0, 6, clean(val))
+        # Risk Level
+        risk = result.get("risk", "-")
+        if isinstance(risk, (list, tuple)):
+            risk = ", ".join([clean(r) for r in risk])
+        self.set_font("Arial", "B", 11)
+        self.cell(0, 7, f"Risk: {clean(risk)}", ln=1)
+        # Evidence
+        evidence = result.get("evidence", "-")
+        self.set_font("Arial", "", 11)
+        self.multi_cell(0, 6, f"Evidence: {clean(evidence)}")
+        # Recommendations
+        recommendations = result.get("recommendations", "-")
+        self.set_font("Arial", "I", 11)
+        self.multi_cell(0, 6, f"Recommendations: {clean(recommendations)}")
         self.ln(2)
 
 def generate_report(results):
     pdf = PromptReportPDF()
-    pdf.add_page()
     pdf.set_auto_page_break(auto=True, margin=15)
-    fontname = "DejaVu" if pdf.has_dejavu else "Arial"
-    pdf.set_font(fontname, "", 12)
-    pdf.cell(0, 10, "Summary of Results", ln=True)
+    # Use DejaVu font if available
+    if os.path.exists(FONT_PATH):
+        pdf.add_font("DejaVu", "", FONT_PATH, uni=True)
+        pdf.add_font("DejaVu", "B", FONT_PATH, uni=True)
+        pdf.add_font("DejaVu", "I", FONT_PATH, uni=True)
+        pdf.set_font("DejaVu", "", 11)
+    else:
+        pdf.set_font("Arial", "", 11)
+    pdf.add_page()
+    pdf.set_font("Arial", "B", 14)
+    pdf.cell(0, 10, "Summary of Results", ln=1)
     pdf.ln(2)
-    for idx, res in enumerate(results):
-        pdf.result_block(res, idx)
-        pdf.ln(2)
-    # Return PDF as bytes
-    return pdf.output(dest="S").encode("latin-1")
+    for idx, item in enumerate(results):
+        prompt = item.get("prompt", "-")
+        result = item.get("result", {}) if isinstance(item.get("result", {}), dict) else {}
+        pdf.add_prompt_result(idx, prompt, result)
+    # Output the PDF as bytes for Streamlit
+    pdf_bytes = pdf.output(dest="S")
+    if isinstance(pdf_bytes, str):
+        pdf_bytes = pdf_bytes.encode("latin-1")
+    return pdf_bytes
