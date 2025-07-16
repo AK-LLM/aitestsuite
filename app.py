@@ -1,7 +1,7 @@
 import streamlit as st
 import json
-import pandas as pd              # <-- FIXED: Add this line
-from datetime import datetime    # <-- Optional if you want to avoid pandas
+import pandas as pd
+from datetime import datetime
 
 from security import security_assessment
 from hallucination import truthfulness_check
@@ -9,7 +9,7 @@ from robustness import robustness_assessment
 from bias_toxicity import bias_test
 from mcp_test import mcp_context_test
 from session_utils import save_session, load_session
-from pdf_report import generate_report
+from pdf_report import generate_report   # <-- Uses new ReportLab version!
 from webhook_utils import send_notification
 from utils import (
     show_help,
@@ -223,7 +223,7 @@ elif start_btn:
             history = []
         # You can use pandas or datetime for the timestamp
         history.append({
-            "timestamp": str(pd.Timestamp.now()),   # <-- Or use: datetime.now().isoformat()
+            "timestamp": str(pd.Timestamp.now()),
             "results": results,
             "count": len(results)
         })
