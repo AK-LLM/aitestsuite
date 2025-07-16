@@ -24,41 +24,56 @@ class PromptReportPDF(FPDF):
             try:
                 self.add_font("DejaVu", "", FONT_PATH, uni=True)
                 self.add_font("DejaVu", "B", FONT_PATH, uni=True)
-                self.add_font("DejaVu", "I", FONT_PATH, uni=True)
-                self.add_font("DejaVu", "BI", FONT_PATH, uni=True)
                 self.has_dejavu = True
-            except Exception:
-                self.has_dejavu = False
-
-    def safe_font(self, style="", size=11):
-        """Switch to DejaVu if available, else Arial."""
-        if self.has_dejavu:
-            self.set_font("DejaVu", style, size)
+            except Exception as e:
+                print("Warning: Could not load DejaVuSans.ttf, using default font. Error:", e)
         else:
-            base = "Arial"
-            self.set_font(base, style, size)
+            print("Warning: DejaVuSans.ttf not found, using default font.")
 
     def header(self):
-        self.safe_font("B", 16)
-        self.cell(0, 12, "AI Prompt Security & Hallucination Assessment", ln=1, align="C")
+        if self.has_dejavu:
+            self.set_font("DejaVu", "B", 16)
+        else:
+            self.set_font("Arial", "B", 16)
+        self.cell(0, 10, "AI Prompt Security & Hallucination Assessment", ln=True, align="C")
         self.ln(6)
 
     def footer(self):
         self.set_y(-15)
-        self.safe_font("", 9)
-        self.cell(0, 10, f"Page {self.page_no()}", 0, 0, "C")
+        if self.has_dejavu:
+            self.set_font("DejaVu", "", 9)
+        else:
+            self.set_font("Arial", "", 9)
+        self.cell(0, 10, f"Page {self.page_no()}", align="C")
 
     def result_block(self, data, idx):
-        self.safe_font("B", 13)
-        self.cell(0, 10, f"Prompt {idx + 1}:", ln=1)
-        self.safe_font("", 11)
-        self.multi_cell(0, 8, clean(data.get("prompt")))
+        self.set_font("DejaVu" if self.has_dejavu else "Arial", "B", 12)
+        self.cell(0, 8, f"Prompt {idx + 1}:", ln=True)
+        self.set_font("DejaVu" if self.has_dejavu else "Arial", "", 11)
+        self.multi_cell(0, 7, clean(data.get("prompt")))
         self.ln(1)
+        # Output test result
+        self.set_font("DejaVu" if self.has_dejavu else "Arial", "I", 10)
+        self.multi_cell(0, 6, "Test Result: " + clean(data.get("result")))
+        # Output risk, evidence, recommendations if present
+        for key in ["risk", "evidence", "recommendations"]:
+            val = data.get(key)
+            if val:
+                self.set_font("DejaVu" if self.has_dejavu else "Arial", "B", 10)
+                self.cell(0, 6, f"{key.capitalize()}:", ln=True)
+                self.set_font("DejaVu" if self.has_dejavu else "Arial", "", 10)
+                self.multi_cell(0, 6, clean(val))
+        self.ln(2)
 
-        self.safe_font("I", 11)
-        self.cell(0, 7, "Purpose: " + clean(data.get("purpose")), ln=1)
-        self.safe_font("", 11)
-
-        self.safe_font("B", 11)
-        self.cell(0, 7, "Risk:", ln=1)
-        self.safe_font_
+def generate_report(results):
+    pdf = PromptReportPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("DejaVu" if pdf.has_dejavu else "Arial", "", 12)
+    pdf.cell(0, 10, "Summary of Results", ln=True)
+    pdf.ln(2)
+    for idx, res in enumerate(results):
+        pdf.result_block(res, idx)
+        pdf.ln(2)
+    # Return PDF as bytes
+    return pdf.output(dest="S").encode("latin-1")
