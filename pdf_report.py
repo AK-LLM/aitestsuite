@@ -1,75 +1,56 @@
 from fpdf import FPDF
-from io import BytesIO
 import os
 
-def ensure_font(pdf):
-    font_path = "DejaVuSans.ttf"
-    if not os.path.exists(font_path):
-        raise FileNotFoundError("DejaVuSans.ttf font not found. Please add it to your app directory.")
-    if "DejaVu" not in pdf.fonts:
-        pdf.add_font('DejaVu', '', font_path, uni=True)
-    pdf.set_font("DejaVu", size=10)
-
-def safe_text(text, limit=120, fallback="N/A"):
-    """Prepare text for safe PDF rendering."""
-    if text is None:
-        return fallback
-    try:
-        s = str(text)
-        # Remove excessive whitespace and newlines
-        s = s.replace('\n', ' ').replace('\r', ' ')
-        # Remove any control characters FPDF can't handle
-        s = ''.join(ch if 32 <= ord(ch) <= 126 or ch in "–—’‘”“…" else '?' for ch in s)
-        if len(s) > limit:
-            s = s[:limit] + "..."
-        return s
-    except Exception:
-        return fallback
-
 def generate_report(results):
-    pdf = FPDF()
+    class PDF(FPDF):
+        def header(self):
+            self.set_font("DejaVu", style="B", size=18)
+            self.cell(0, 15, "AI Prompt Security & Hallucination Assessment", ln=True, align='C')
+            self.ln(5)
+        def chapter_title(self, num, label):
+            self.set_font("DejaVu", style="B", size=14)
+            self.cell(0, 10, f"Prompt {num}: {label}", ln=True)
+        def chapter_body(self, text):
+            self.set_font("DejaVu", size=12)
+            self.multi_cell(0, 8, text)
+        def result_block(self, data):
+            self.set_font("DejaVu", size=12)
+            if data.get("risk_badge"):
+                self.set_text_color(255,0,0) if data["risk_badge"]=="High" else self.set_text_color(255,165,0) if data["risk_badge"]=="Medium" else self.set_text_color(0,128,0)
+                self.cell(0, 8, f"Risk: {data['risk_badge']} ({data.get('risk_score','N/A')})", ln=True)
+                self.set_text_color(0,0,0)
+            if data.get("tags"):
+                self.set_font("DejaVu", style="I", size=11)
+                self.cell(0,8, f"Tags: {', '.join(data['tags'])}", ln=True)
+                self.set_font("DejaVu", size=12)
+            if data.get("evidence"):
+                self.set_font("DejaVu", style="B", size=11)
+                self.cell(0,8, "Evidence:", ln=True)
+                self.set_font("DejaVu", size=12)
+                self.multi_cell(0,7, data["evidence"])
+            if data.get("recommendations"):
+                self.set_font("DejaVu", style="B", size=11)
+                self.cell(0,8, "Recommendations:", ln=True)
+                self.set_font("DejaVu", size=12)
+                self.multi_cell(0,7, data["recommendations"])
+            self.ln(3)
+
+    pdf = PDF()
+    # Assume DejaVuSans.ttf in working directory
+    font_path = os.path.join(os.path.dirname(__file__), "DejaVuSans.ttf")
+    pdf.add_font("DejaVu", "", font_path, uni=True)
+    pdf.add_font("DejaVu", "B", font_path, uni=True)
+    pdf.add_font("DejaVu", "I", font_path, uni=True)
     pdf.add_page()
-    ensure_font(pdf)
+
     pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_font("DejaVu", size=12)
+    pdf.cell(0,10, "Summary of Results", ln=True)
 
-    pdf.set_font("DejaVu", size=16)
-    pdf.cell(0, 12, "AI Prompt Security & Hallucination Assessment", ln=1, align='C')
-    pdf.ln(5)
+    for i, res in enumerate(results, 1):
+        pdf.chapter_title(i, res.get("prompt", ""))
+        pdf.chapter_body(res.get("result", ""))
+        pdf.result_block(res)
+        pdf.ln(3)
 
-    pdf.set_font("DejaVu", size=11)
-    pdf.cell(0, 10, "Summary of Results", ln=1)
-
-    for idx, r in enumerate(results, 1):
-        try:
-            pdf.set_font("DejaVu", size=10)
-            pdf.cell(0, 8, f"Prompt {idx}:", ln=1)
-            pdf.set_font("DejaVu", size=9)
-            prompt = safe_text(r.get("prompt", ""), 250)
-            pdf.multi_cell(0, 7, prompt)
-            
-            risk_badge = safe_text(r.get("risk_badge", ""))
-            risk_score = safe_text(r.get("risk_score", ""))
-            pdf.multi_cell(0, 7, f"Risk: {risk_badge} - {risk_score}")
-
-            result = safe_text(r.get("result", ""), 350)
-            pdf.multi_cell(0, 7, f"Result: {result}")
-
-            if "explanation" in r and r["explanation"]:
-                explanation = safe_text(r["explanation"], 350)
-                pdf.multi_cell(0, 7, f"Explanation: {explanation}")
-
-            pdf.ln(2)
-            pdf.set_draw_color(150, 150, 150)
-            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-            pdf.ln(2)
-        except Exception as e:
-            # Don't let a bad row crash the PDF
-            pdf.set_font("DejaVu", size=9)
-            pdf.cell(0, 8, f"[Error rendering prompt {idx}: {e}]", ln=1)
-            pdf.ln(2)
-
-    # --- Use BytesIO for full compatibility with Streamlit ---
-    buffer = BytesIO()
-    pdf.output(buffer)
-    buffer.seek(0)
-    return buffer.read()
+    return pdf.output(dest='S').encode("latin-1")
