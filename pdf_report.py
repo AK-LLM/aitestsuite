@@ -56,10 +56,7 @@ class PromptReportPDF(FPDF):
         self.multi_cell(0, 7, clean(data.get("prompt")))
         self.ln(1)
         # Output test result
-        if self.has_dejavu:
-            self.set_font("DejaVu", "I", 10)
-        else:
-            self.set_font("Arial", "", 10)  # fallback: plain only
+        self.set_font(fontname, "B", 10)
         self.multi_cell(0, 6, "Test Result: " + clean(data.get("result")))
         # Output risk, evidence, recommendations if present
         for key in ["risk", "evidence", "recommendations"]:
