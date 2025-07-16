@@ -3,7 +3,6 @@ from reportlab.pdfgen import canvas
 from io import BytesIO
 
 def safe(val):
-    """Ensure all fields are printable and no None/nulls."""
     if val is None:
         return "-"
     if isinstance(val, list):
@@ -45,9 +44,17 @@ def generate_report(results):
             c.drawString(55, y, f"Prompt {idx+1}:")
             y -= 15
             c.setFont("Helvetica", 10)
+            def wrap(text, maxlen=100):
+                lines = []
+                while len(text) > maxlen:
+                    idx = text[:maxlen].rfind(" ")
+                    if idx == -1: idx = maxlen
+                    lines.append(text[:idx])
+                    text = text[idx:].lstrip()
+                lines.append(text)
+                return lines
 
-            # Print main fields
-            fields = [
+            for label, field in [
                 ("Prompt", res.get("prompt", "-")),
                 ("Description", res.get("desc", "-")),
                 ("Tags", ", ".join(res.get("tags", []))),
@@ -55,31 +62,23 @@ def generate_report(results):
                 ("Risk Badge", res.get("risk_badge", "-")),
                 ("Evidence", "; ".join(res.get("evidence", []))),
                 ("Recommendations", "; ".join(res.get("recommendations", []))),
-            ]
-            for label, field in fields:
-                # Wrap long lines
-                lines = []
-                t = safe(field)
-                while len(t) > 105:
-                    idx_ = t[:105].rfind(" ")
-                    if idx_ == -1: idx_ = 105
-                    lines.append(t[:idx_])
-                    t = t[idx_:].lstrip()
-                lines.append(t)
-                for line in lines:
-                    c.drawString(70, y, f"{label}: {line}")
+                ("Root Cause", "; ".join(res.get("root_cause", [])))
+            ]:
+                text = f"{label}: {field}"
+                for line in wrap(str(text), 110):
+                    c.drawString(70, y, line)
                     y -= 12
 
-            # Nested results
+            # Nested results: Security, Hallucination, Robustness, Bias, MCP
             for k in ("security", "hallucination", "robustness", "bias", "mcp"):
                 v = res.get(k)
                 if isinstance(v, dict):
                     c.drawString(70, y, f"{k.capitalize()} Results:")
                     y -= 12
-                    for subk, subv in v.items():
-                        line = f"    {subk}: {safe(subv)}"
-                        c.drawString(80, y, line)
-                        y -= 12
+                    for subk in ("risk_level", "explanation", "evidence", "recommendation", "confidence"):
+                        if subk in v:
+                            c.drawString(80, y, f"  {subk.capitalize()}: {safe(v[subk])}")
+                            y -= 12
 
             y -= 8
     c.save()
