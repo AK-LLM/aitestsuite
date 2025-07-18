@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 import pandas as pd
+import os
 from datetime import datetime
 
 # --- Custom Modules ---
@@ -22,15 +23,12 @@ from utils import (
 )
 from prompt_banks import add_prompt, remove_prompt
 
-# --- App Config ---
 st.set_page_config(page_title="AI Infosec & Context Risk Dashboard (Ultra+)", layout="wide")
 st.title("🛡️ AI Infosec & Context-Aware Risk Dashboard (Ultra+)")
 
-# --- Sidebar: Test Mode Toggle ---
 st.sidebar.header("Mode")
 mode = st.sidebar.radio("Select test type", ["Prompt Bank", "Context Scenarios"])
 
-# --- Risk Matrix legend panel (top of both modes) ---
 with st.expander("Risk Matrix Legend", expanded=True):
     st.markdown(
         "| Level | Definition | Example | Action |\n"
@@ -261,9 +259,15 @@ elif mode == "Context Scenarios":
         placeholder="https://your-ai-api.com/predict"
     )
 
-    uploaded_file = st.file_uploader("Upload JSON scenario(s)", type=["json"])
+    # List available scenario files
+    scenario_dir = "scenarios"
+    scenario_files = [f for f in os.listdir(scenario_dir) if f.endswith(".json")]
+    scenario_choice = st.selectbox("Select scenario JSON from folder", [""] + scenario_files)
+
+    uploaded_file = st.file_uploader("Or upload JSON scenario(s)", type=["json"])
     scenarios = None
 
+    # Priority: uploaded file > scenario folder selection
     if uploaded_file:
         try:
             scenarios = load_scenarios_from_json(uploaded_file)
@@ -273,8 +277,17 @@ elif mode == "Context Scenarios":
         except Exception as e:
             st.error(f"Could not parse scenario file: {e}")
             scenarios = None
+    elif scenario_choice:
+        try:
+            with open(os.path.join(scenario_dir, scenario_choice), "r", encoding="utf-8") as f:
+                scenarios = json.load(f)
+            if not isinstance(scenarios, list) or not all('scenario_id' in s for s in scenarios):
+                raise ValueError("JSON format error: Must be a list of scenario objects each with 'scenario_id'.")
+            st.info(f"Loaded {len(scenarios)} scenario(s) from {scenario_choice}.")
+        except Exception as e:
+            st.error(f"Could not load scenario file '{scenario_choice}': {e}")
+            scenarios = None
 
-    # Only show scenario list/expander and Run button if scenarios loaded
     if scenarios:
         for s in scenarios:
             with st.expander(f"{s['scenario_id']}: {s['description'][:70]}", expanded=False):
