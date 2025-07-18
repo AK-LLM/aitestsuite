@@ -1,10 +1,8 @@
 import streamlit as st
 import json
 import pandas as pd
-import os
 from datetime import datetime
 
-# --- Custom Modules ---
 from security import security_assessment
 from hallucination import truthfulness_check
 from robustness import robustness_assessment
@@ -26,9 +24,21 @@ from prompt_banks import add_prompt, remove_prompt
 st.set_page_config(page_title="AI Infosec & Context Risk Dashboard (Ultra+)", layout="wide")
 st.title("🛡️ AI Infosec & Context-Aware Risk Dashboard (Ultra+)")
 
+# Sidebar: Mode selection
 st.sidebar.header("Mode")
 mode = st.sidebar.radio("Select test type", ["Prompt Bank", "Context Scenarios"])
 
+# Sidebar: API/Test Mode toggle
+st.sidebar.markdown("---")
+st.sidebar.subheader("Execution Mode")
+run_mode = st.sidebar.radio("Mode", ["Demo/Test", "API/Live"])
+api_endpoint = ""
+api_key = ""
+if run_mode == "API/Live":
+    api_endpoint = st.sidebar.text_input("AI Model Endpoint URL", placeholder="https://api.openai.com/v1/chat/completions")
+    api_key = st.sidebar.text_input("API Key", type="password", placeholder="Paste your API key")
+
+# Risk Matrix Legend
 with st.expander("Risk Matrix Legend", expanded=True):
     st.markdown(
         "| Level | Definition | Example | Action |\n"
@@ -39,20 +49,16 @@ with st.expander("Risk Matrix Legend", expanded=True):
         ])
     )
 
-# ========================================================================
-# ======================== PROMPT BANK MODE ==============================
-# ========================================================================
+# ===================== PROMPT BANK MODE =====================
 if mode == "Prompt Bank":
     st.subheader("Prompt Bank Workflow")
-    ai_endpoint = st.text_input(
-        "Enter AI Model Endpoint URL:", placeholder="https://your-ai-api.com/predict"
-    )
     all_domains = list(load_prompt_bank().keys())
     selected_domains = [
         d for d in all_domains if st.sidebar.checkbox(d, value=(d in ["Security", "Hallucination", "Robustness"]))
     ]
     st.sidebar.markdown("---")
 
+    # Prompt editor
     if st.sidebar.checkbox("Edit Prompt Banks"):
         edit_domain = st.sidebar.selectbox("Select domain to edit", all_domains)
         prompts = load_prompt_bank(edit_domain)
@@ -83,6 +89,7 @@ if mode == "Prompt Bank":
                 st.experimental_rerun()
     st.sidebar.markdown("---")
 
+    # Upload custom prompts
     uploaded_prompts = []
     uploaded_file = st.sidebar.file_uploader(
         "Upload Custom Prompts (txt/csv)", type=["txt", "csv"]
@@ -91,6 +98,7 @@ if mode == "Prompt Bank":
         uploaded_prompts = parse_uploaded_prompts(uploaded_file)
         st.sidebar.success(f"{len(uploaded_prompts)} prompts uploaded.")
 
+    # Tag filter
     all_tags = sorted(
         {tag for d in all_domains for p in load_prompt_bank(d) for tag in p.get("tags", [])}
     )
@@ -98,6 +106,7 @@ if mode == "Prompt Bank":
     if st.sidebar.button("Show Help & Workflow"):
         show_help()
 
+    # Gather prompts
     all_prompts = []
     for d in selected_domains:
         all_prompts.extend(load_prompt_bank(d))
@@ -106,7 +115,6 @@ if mode == "Prompt Bank":
     all_prompts = deduplicate_prompts(all_prompts)
     if filter_tag:
         all_prompts = filter_prompts_by_tag(all_prompts, filter_tag)
-
     st.markdown(f"**{len(all_prompts)} prompts loaded for this run.**")
 
     colA, colB, colC, colD = st.columns([2, 1, 1, 1])
@@ -146,8 +154,8 @@ if mode == "Prompt Bank":
             st.success("Session saved!")
 
     elif start_btn:
-        if not ai_endpoint:
-            st.error("Please provide a valid AI Endpoint URL.")
+        if run_mode == "API/Live" and not (api_endpoint and api_key):
+            st.error("Please provide your AI endpoint and API key.")
         elif not all_prompts:
             st.warning("No prompts selected or uploaded.")
         else:
@@ -163,11 +171,25 @@ if mode == "Prompt Bank":
                             st.caption(f"Purpose: {desc}")
                         if tags:
                             st.markdown(f"**Tags:** `{', '.join(tags)}`")
-                        sec_res = security_assessment(ai_endpoint, prompt)
-                        hall_res = truthfulness_check(ai_endpoint, prompt)
-                        robust_res = robustness_assessment(ai_endpoint, prompt)
-                        bias_res = bias_test(ai_endpoint, prompt)
-                        mcp_res = mcp_context_test(ai_endpoint, prompt)
+
+                        # Decide API or test mode
+                        if run_mode == "API/Live":
+                            # Here you would make a call to your real API
+                            # Example:
+                            # response = requests.post(api_endpoint, headers={"Authorization": f"Bearer {api_key}"}, json={...})
+                            # Use your actual API logic here. We'll mock for now:
+                            sec_res = security_assessment(api_endpoint, prompt, api_key)
+                            hall_res = truthfulness_check(api_endpoint, prompt, api_key)
+                            robust_res = robustness_assessment(api_endpoint, prompt, api_key)
+                            bias_res = bias_test(api_endpoint, prompt, api_key)
+                            mcp_res = mcp_context_test(api_endpoint, prompt, api_key)
+                        else:
+                            # Test/fake/demo
+                            sec_res = security_assessment("demo", prompt)
+                            hall_res = truthfulness_check("demo", prompt)
+                            robust_res = robustness_assessment("demo", prompt)
+                            bias_res = bias_test("demo", prompt)
+                            mcp_res = mcp_context_test("demo", prompt)
 
                         assessments = {
                             "Security": sec_res,
@@ -223,7 +245,6 @@ if mode == "Prompt Bank":
                             "root_cause": root
                         })
                     progress.progress(i / len(all_prompts))
-
             st.session_state["last_findings"] = results
             if root_causes:
                 st.subheader("Root Cause Analysis")
@@ -249,60 +270,41 @@ if mode == "Prompt Bank":
             st.download_button("Download Results (CSV)", data=pd.DataFrame(results).to_csv(index=False), file_name="results.csv")
             st.download_button("Download Results (JSON)", data=json.dumps(results, indent=2), file_name="results.json")
 
-# ========================================================================
-# ====================== CONTEXT SCENARIO MODE ===========================
-# ========================================================================
+# ====================== CONTEXT SCENARIO MODE ======================
 elif mode == "Context Scenarios":
     st.subheader("Context Scenario Workflow")
-    ai_endpoint_context = st.text_input(
-        "Enter AI Model Endpoint URL for Context Scenarios:",
-        placeholder="https://your-ai-api.com/predict"
-    )
+    ai_endpoint = ""
+    api_key = ""
+    if run_mode == "API/Live":
+        ai_endpoint = st.text_input("Enter AI Model Endpoint URL", value="", key="ctx_endpoint")
+        api_key = st.text_input("API Key", type="password", value="", key="ctx_api_key")
 
-    # List available scenario files
-    scenario_dir = "scenarios"
-    scenario_files = [f for f in os.listdir(scenario_dir) if f.endswith(".json")]
-    scenario_choice = st.selectbox("Select scenario JSON from folder", [""] + scenario_files)
-
-    uploaded_file = st.file_uploader("Or upload JSON scenario(s)", type=["json"])
+    uploaded_file = st.file_uploader("Upload JSON scenario(s)", type=["json"])
     scenarios = None
-
-    # Priority: uploaded file > scenario folder selection
     if uploaded_file:
         try:
             scenarios = load_scenarios_from_json(uploaded_file)
             if not isinstance(scenarios, list) or not all('scenario_id' in s for s in scenarios):
                 raise ValueError("JSON format error: Must be a list of scenario objects each with 'scenario_id'.")
-            st.success(f"Loaded {len(scenarios)} scenario(s) from upload.")
+            st.success(f"Loaded {len(scenarios)} scenario(s).")
+            for s in scenarios:
+                with st.expander(f"{s['scenario_id']}: {s['description'][:70]}", expanded=False):
+                    for i, turn in enumerate(s['turns']):
+                        st.markdown(f"**Turn {i+1}** ({turn['role']}): {turn['content']}")
+                    st.markdown(f"**Expected:** {s.get('expected_behavior','')}")
+                    st.markdown(f"**Tags:** {', '.join(s.get('tags', []))}")
         except Exception as e:
             st.error(f"Could not parse scenario file: {e}")
             scenarios = None
-    elif scenario_choice:
-        try:
-            with open(os.path.join(scenario_dir, scenario_choice), "r", encoding="utf-8") as f:
-                scenarios = json.load(f)
-            if not isinstance(scenarios, list) or not all('scenario_id' in s for s in scenarios):
-                raise ValueError("JSON format error: Must be a list of scenario objects each with 'scenario_id'.")
-            st.info(f"Loaded {len(scenarios)} scenario(s) from {scenario_choice}.")
-        except Exception as e:
-            st.error(f"Could not load scenario file '{scenario_choice}': {e}")
-            scenarios = None
-
-    if scenarios:
-        for s in scenarios:
-            with st.expander(f"{s['scenario_id']}: {s['description'][:70]}", expanded=False):
-                for i, turn in enumerate(s['turns']):
-                    st.markdown(f"**Turn {i+1}** ({turn['role']}): {turn['content']}")
-                st.markdown(f"**Expected:** {s.get('expected_behavior','')}")
-                st.markdown(f"**Tags:** {', '.join(s.get('tags', []))}")
 
     if scenarios and st.button("Run Context Scenarios"):
-        # TODO: Plug in your actual context test pipeline, e.g. call ai_endpoint_context if needed.
         scenario_results = []
         for scenario in scenarios:
-            # Example result: replace with your real assessment
+            # API/Live mode would process with real API using ai_endpoint and api_key
+            # For demo, use fake data
             result = {
-                "result": "Flagged",
+                "category": scenario.get("category"),
+                "scenario_id": scenario.get("scenario_id"),
                 "risk_level": "High",
                 "risk_description": "Model leaked prior turn information (context carryover).",
                 "evidence": "Model repeated secret from turn 1 in turn 3.",
