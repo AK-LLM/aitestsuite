@@ -245,29 +245,50 @@ if mode == "Prompt Bank":
 # ================= CONTEXT SCENARIOS =================
 elif mode == "Context Scenarios":
     st.subheader("Context Scenario Workflow")
-    # --- Option C: Select scenario/test JSON file from /scenarios folder ---
+    context_ai_endpoint = st.text_input(
+        "Enter AI Model Endpoint URL (Context Scenarios):", placeholder="https://your-ai-api.com/predict"
+    )
+
+    # Option 1: Manual upload
+    uploaded_file = st.file_uploader("Upload JSON scenario(s) (optional)", type=["json"])
+    uploaded_scenarios = []
+    if uploaded_file:
+        try:
+            file_content = uploaded_file.read().decode("utf-8")
+            uploaded_scenarios = json.loads(file_content)
+            st.success(f"Loaded {len(uploaded_scenarios)} scenario(s) from uploaded file.")
+        except Exception as e:
+            uploaded_scenarios = []
+            st.error(f"Error loading uploaded JSON file: {e}")
+
+    # Option 2: Select from /scenarios folder
     scenario_folder = "scenarios"
     scenario_files = [f for f in os.listdir(scenario_folder) if f.endswith(".json")]
-    selected_scenario = st.selectbox("Choose a scenario/test suite JSON file", scenario_files)
+    selected_scenario = st.selectbox("Or select a scenario/test suite JSON file from /scenarios", scenario_files)
     scenario_path = os.path.join(scenario_folder, selected_scenario) if selected_scenario else None
 
-    scenarios = []
-    if scenario_path:
+    file_scenarios = []
+    if scenario_path and not uploaded_file:  # If upload not present, use folder
         try:
             with open(scenario_path, "r", encoding="utf-8") as file:
-                scenarios = json.load(file)
-            st.success(f"Loaded {len(scenarios)} scenario(s) from {selected_scenario}.")
-            for s in scenarios:
-                with st.expander(f"{s['scenario_id']}: {s['description'][:70]}", expanded=False):
-                    for i, turn in enumerate(s['turns']):
-                        st.markdown(f"**Turn {i+1}** ({turn['role']}): {turn['content']}")
-                    st.markdown(f"**Expected:** {s.get('expected_behavior','')}")
-                    st.markdown(f"**Tags:** {', '.join(s.get('tags', []))}")
+                file_scenarios = json.load(file)
+            st.success(f"Loaded {len(file_scenarios)} scenario(s) from {selected_scenario}.")
         except Exception as e:
+            file_scenarios = []
             st.error(f"Could not load scenario file: {e}")
 
-    if scenarios and st.button("Run Context Scenarios"):
-        # Replace this with your real scenario pipeline if needed
+    # Priority: uploaded scenarios if present, else file_scenarios
+    scenarios = uploaded_scenarios if uploaded_scenarios else file_scenarios
+
+    if scenarios:
+        for s in scenarios:
+            with st.expander(f"{s['scenario_id']}: {s['description'][:70]}", expanded=False):
+                for i, turn in enumerate(s['turns']):
+                    st.markdown(f"**Turn {i+1}** ({turn['role']}): {turn['content']}")
+                st.markdown(f"**Expected:** {s.get('expected_behavior','')}")
+                st.markdown(f"**Tags:** {', '.join(s.get('tags', []))}")
+
+    if scenarios and context_ai_endpoint and st.button("Run Context Scenarios"):
         scenario_results = []
         for scenario in scenarios:
             result = {
@@ -276,7 +297,8 @@ elif mode == "Context Scenarios":
                 "risk_description": "Model leaked prior turn information (context carryover).",
                 "evidence": "Model repeated secret from turn 1 in turn 3.",
                 "recommendations": "Enforce session boundaries in the model.",
-                "root_cause": "Context carryover; no isolation between turns."
+                "root_cause": "Context carryover; no isolation between turns.",
+                "ai_endpoint": context_ai_endpoint
             }
             scenario_results.append(flatten_scenario_for_report(scenario, result))
         st.session_state['last_run'] = scenario_results
