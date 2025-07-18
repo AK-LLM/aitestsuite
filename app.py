@@ -45,7 +45,6 @@ with st.expander("Risk Matrix Legend", expanded=True):
 # ======================== PROMPT BANK MODE ==============================
 # ========================================================================
 if mode == "Prompt Bank":
-    # Prompt Domain Selection & Management
     st.subheader("Prompt Bank Workflow")
     ai_endpoint = st.text_input(
         "Enter AI Model Endpoint URL:", placeholder="https://your-ai-api.com/predict"
@@ -56,7 +55,6 @@ if mode == "Prompt Bank":
     ]
     st.sidebar.markdown("---")
 
-    # Optional prompt editor
     if st.sidebar.checkbox("Edit Prompt Banks"):
         edit_domain = st.sidebar.selectbox("Select domain to edit", all_domains)
         prompts = load_prompt_bank(edit_domain)
@@ -87,7 +85,6 @@ if mode == "Prompt Bank":
                 st.experimental_rerun()
     st.sidebar.markdown("---")
 
-    # Upload
     uploaded_prompts = []
     uploaded_file = st.sidebar.file_uploader(
         "Upload Custom Prompts (txt/csv)", type=["txt", "csv"]
@@ -96,7 +93,6 @@ if mode == "Prompt Bank":
         uploaded_prompts = parse_uploaded_prompts(uploaded_file)
         st.sidebar.success(f"{len(uploaded_prompts)} prompts uploaded.")
 
-    # Tag filter
     all_tags = sorted(
         {tag for d in all_domains for p in load_prompt_bank(d) for tag in p.get("tags", [])}
     )
@@ -104,7 +100,6 @@ if mode == "Prompt Bank":
     if st.sidebar.button("Show Help & Workflow"):
         show_help()
 
-    # Gather all prompts
     all_prompts = []
     for d in selected_domains:
         all_prompts.extend(load_prompt_bank(d))
@@ -265,23 +260,28 @@ elif mode == "Context Scenarios":
         "Enter AI Model Endpoint URL for Context Scenarios:",
         placeholder="https://your-ai-api.com/predict"
     )
+
     uploaded_file = st.file_uploader("Upload JSON scenario(s)", type=["json"])
     scenarios = None
+
     if uploaded_file:
         try:
             scenarios = load_scenarios_from_json(uploaded_file)
             if not isinstance(scenarios, list) or not all('scenario_id' in s for s in scenarios):
                 raise ValueError("JSON format error: Must be a list of scenario objects each with 'scenario_id'.")
-            st.success(f"Loaded {len(scenarios)} scenario(s).")
-            for s in scenarios:
-                with st.expander(f"{s['scenario_id']}: {s['description'][:70]}", expanded=False):
-                    for i, turn in enumerate(s['turns']):
-                        st.markdown(f"**Turn {i+1}** ({turn['role']}): {turn['content']}")
-                    st.markdown(f"**Expected:** {s.get('expected_behavior','')}")
-                    st.markdown(f"**Tags:** {', '.join(s.get('tags', []))}")
+            st.success(f"Loaded {len(scenarios)} scenario(s) from upload.")
         except Exception as e:
             st.error(f"Could not parse scenario file: {e}")
             scenarios = None
+
+    # Only show scenario list/expander and Run button if scenarios loaded
+    if scenarios:
+        for s in scenarios:
+            with st.expander(f"{s['scenario_id']}: {s['description'][:70]}", expanded=False):
+                for i, turn in enumerate(s['turns']):
+                    st.markdown(f"**Turn {i+1}** ({turn['role']}): {turn['content']}")
+                st.markdown(f"**Expected:** {s.get('expected_behavior','')}")
+                st.markdown(f"**Tags:** {', '.join(s.get('tags', []))}")
 
     if scenarios and st.button("Run Context Scenarios"):
         # TODO: Plug in your actual context test pipeline, e.g. call ai_endpoint_context if needed.
