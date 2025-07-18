@@ -1,6 +1,7 @@
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from io import BytesIO
+from risk_matrix import RISK_MATRIX
 
 def safe(val):
     if val is None:
@@ -9,78 +10,71 @@ def safe(val):
         return "; ".join(str(x) for x in val if x)
     return str(val)
 
-def generate_report(results):
+def draw_risk_matrix(c, y, width):
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50, y, "Risk Matrix Legend")
+    y -= 16
+    c.setFont("Helvetica", 10)
+    for row in RISK_MATRIX:
+        c.drawString(60, y, f"{row['level']} - {row['definition']}")
+        y -= 13
+        c.drawString(80, y, f"Example: {row['example']}")
+        y -= 13
+        c.drawString(80, y, f"Action: {row['action']}")
+        y -= 15
+    y -= 10
+    return y
+
+def generate_report(scenario_results):
     buffer = BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
     width, height = letter
-    y = height - 50
+    y = height - 35
 
-    c.setFont("Helvetica-Bold", 17)
-    c.drawString(50, y, "AI Prompt Security & Hallucination Assessment")
-    y -= 35
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(50, y, "AI Context-Aware Risk Assessment Report")
+    y -= 28
 
-    c.setFont("Helvetica-Bold", 13)
-    c.drawString(50, y, "Summary of Results")
-    y -= 22
+    # Risk Matrix Legend
+    y = draw_risk_matrix(c, y, width)
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(50, y, "Scenario Findings")
+    y -= 18
 
     c.setFont("Helvetica", 10)
-
-    if not results:
-        c.drawString(60, y, "No results found.")
-        y -= 15
-    else:
-        for idx, res in enumerate(results):
-            if y < 120:
-                c.showPage()
-                y = height - 50
-                c.setFont("Helvetica-Bold", 17)
-                c.drawString(50, y, "AI Prompt Security & Hallucination Assessment (cont’d)")
-                y -= 35
-                c.setFont("Helvetica-Bold", 13)
-                c.drawString(50, y, "Summary of Results (cont’d)")
-                y -= 22
-                c.setFont("Helvetica", 10)
-            c.setFont("Helvetica-Bold", 11)
-            c.drawString(55, y, f"Prompt {idx+1}:")
-            y -= 15
+    for idx, item in enumerate(scenario_results):
+        if y < 130:
+            c.showPage()
+            y = height - 50
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(50, y, "Scenario Findings (cont’d)")
+            y -= 18
             c.setFont("Helvetica", 10)
-            def wrap(text, maxlen=100):
-                lines = []
-                while len(text) > maxlen:
-                    idx = text[:maxlen].rfind(" ")
-                    if idx == -1: idx = maxlen
-                    lines.append(text[:idx])
-                    text = text[idx:].lstrip()
-                lines.append(text)
-                return lines
 
-            for label, field in [
-                ("Prompt", res.get("prompt", "-")),
-                ("Description", res.get("desc", "-")),
-                ("Tags", ", ".join(res.get("tags", []))),
-                ("Risk Score", res.get("risk_score", "-")),
-                ("Risk Badge", res.get("risk_badge", "-")),
-                ("Evidence", "; ".join(res.get("evidence", []))),
-                ("Recommendations", "; ".join(res.get("recommendations", []))),
-                ("Root Cause", "; ".join(res.get("root_cause", [])))
-            ]:
-                text = f"{label}: {field}"
-                for line in wrap(str(text), 110):
-                    c.drawString(70, y, line)
-                    y -= 12
+        c.setFont("Helvetica-Bold", 11)
+        c.drawString(55, y, f"Scenario {idx+1}: {safe(item.get('scenario_id'))}")
+        y -= 14
+        c.setFont("Helvetica", 10)
 
-            # Nested results: Security, Hallucination, Robustness, Bias, MCP
-            for k in ("security", "hallucination", "robustness", "bias", "mcp"):
-                v = res.get(k)
-                if isinstance(v, dict):
-                    c.drawString(70, y, f"{k.capitalize()} Results:")
-                    y -= 12
-                    for subk in ("risk_level", "explanation", "evidence", "recommendation", "confidence"):
-                        if subk in v:
-                            c.drawString(80, y, f"  {subk.capitalize()}: {safe(v[subk])}")
-                            y -= 12
+        # Context trace
+        c.drawString(60, y, f"Context Trace: {safe(item.get('context_trace'))[:120]}")
+        y -= 12
+        # Show descriptive finding (risk/why/evidence/rec)
+        c.drawString(60, y, f"Risk Level: {item.get('risk_level')} | {item.get('risk_description')}")
+        y -= 12
+        c.drawString(60, y, f"Evidence: {safe(item.get('evidence'))}")
+        y -= 12
+        c.drawString(60, y, f"Recommendation: {safe(item.get('recommendations'))}")
+        y -= 12
+        c.drawString(60, y, f"Root Cause: {safe(item.get('root_cause'))}")
+        y -= 10
+        c.drawString(60, y, f"Expected: {safe(item.get('expected_behavior'))}")
+        y -= 12
+        c.drawString(60, y, f"Tags: {safe(item.get('tags'))}")
+        y -= 12
+        c.drawString(60, y, f"Description: {safe(item.get('description'))}")
+        y -= 14
 
-            y -= 8
     c.save()
     buffer.seek(0)
     return buffer.getvalue()
