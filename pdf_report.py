@@ -3,12 +3,14 @@
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib import colors
 from reportlab.platypus import (
-    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 import io
+import matplotlib.pyplot as plt
+from collections import Counter
 
-# Cross-mapping for frameworks (extend as needed)
+# Map for attack categories to frameworks
 CATEGORY_MAP = {
     "Prompt Injection": {"vector": "Prompt Injection", "frameworks": "OWASP LLM #1, MITRE ATLAS ATC-PRM"},
     "Roleplay & Jailbreak": {"vector": "Jailbreak/Role Abuse", "frameworks": "OWASP LLM #2, MITRE ATLAS ATC-ROL"},
@@ -29,47 +31,66 @@ CATEGORY_MAP = {
 def _map_category(cat):
     return CATEGORY_MAP.get(cat, {"vector": cat, "frameworks": "-"})
 
-def generate_report(results):
+def safe_val(val, default):
+    if val is None:
+        return default
+    if isinstance(val, str) and val.strip() == "":
+        return default
+    return val
+
+def plot_bar(data_dict, title, ylabel):
+    """Return a ReportLab Image of a matplotlib bar chart."""
+    fig, ax = plt.subplots(figsize=(6, 2.7), dpi=110)
+    items = list(data_dict.items())
+    keys = [str(k) for k, v in items]
+    vals = [v for k, v in items]
+    bars = ax.bar(keys, vals, color="#556b8a")
+    ax.set_title(title, fontsize=12)
+    ax.set_ylabel(ylabel)
+    ax.set_xlabel("")
+    for bar in bars:
+        ax.annotate(str(bar.get_height()), xy=(bar.get_x() + bar.get_width() / 2, bar.get_height()),
+                    xytext=(0, 3), textcoords="offset points", ha='center', va='bottom', fontsize=9)
+    plt.tight_layout()
     buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=landscape(letter), leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
-    styles = getSampleStyleSheet()
-    styleN = styles["Normal"]
-    styleB = styles["Heading2"]
-    styleSmall = ParagraphStyle(name='Small', fontSize=8, leading=10)
+    plt.savefig(buf, format="png")
+    plt.close(fig)
+    buf.seek(0)
+    return Image(buf, width=320, height=145)
 
-    elements = []
-    elements.append(Paragraph("<b>AI Context Security Assessment Report</b>", styles["Title"]))
-    elements.append(Spacer(1, 18))
-
-    # ==== SUMMARY COVERAGE ====
-    metric_set = set()
-    category_hits = {}
+def split_results_by_type(results):
+    # If your results have a "mode" or "source" key, split accordingly
+    # Otherwise, guess by keys present (e.g., context scenarios usually have "scenario_id")
+    prompt_attacks = []
+    context_attacks = []
     for r in results:
-        cat = r.get("category", "Unknown")
-        metric = _map_category(cat)["vector"]
-        metric_set.add(metric)
-        category_hits[metric] = category_hits.get(metric, 0) + 1
+        if r.get("mode") == "Context Scenario" or r.get("source") == "Context Scenario" or "context" in r.get("category","").lower():
+            context_attacks.append(r)
+        else:
+            prompt_attacks.append(r)
+    return prompt_attacks, context_attacks
 
-    elements.append(Paragraph("<b>Summary Coverage Matrix</b>", styleB))
-    coverage_data = [["Security Metric / Attack Vector", "Cases Detected"]]
-    for metric in sorted(metric_set):
-        coverage_data.append([metric, str(category_hits.get(metric, 0))])
-    coverage_tbl = Table(coverage_data, hAlign="LEFT", colWidths=[240, 100])
-    coverage_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#223344")),
-        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
-        ("GRID", (0,0), (-1,-1), 0.25, colors.grey),
-        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
-        ("FONTSIZE", (0,0), (-1,0), 11),
-        ("FONTNAME", (0,1), (-1,-1), "Helvetica"),
-        ("FONTSIZE", (0,1), (-1,-1), 9),
-    ]))
-    elements.append(coverage_tbl)
-    elements.append(Spacer(1, 14))
+def get_risk_status(risk):
+    if risk is None or risk == "":
+        return "Pass"
+    if isinstance(risk, str):
+        if "fail" in risk.lower():
+            return "Fail"
+        if "not applicable" in risk.lower() or "n/a" in risk.lower():
+            return "Not Applicable"
+        if "mitigated" in risk.lower():
+            return "Mitigated"
+        if "compliant" in risk.lower():
+            return "Compliant"
+        if "high" in risk.lower():
+            return "High"
+        if "medium" in risk.lower():
+            return "Medium"
+        if "low" in risk.lower():
+            return "Low"
+    return risk
 
-    # ==== DETAILED FINDINGS ====
-    elements.append(Paragraph("<b>Detailed Scenario Findings</b>", styleB))
-
+def findings_table_block(results, table_title="Findings Table"):
     findings_data = [[
         "Scenario ID", "Category", "Attack Vector", "Severity", "Risk Description", "Evidence", "Recommendation", "Framework Mapping"
     ]]
@@ -77,14 +98,14 @@ def generate_report(results):
         cat = r.get("category", "Unknown")
         m = _map_category(cat)
         findings_data.append([
-            r.get("scenario_id", "-"),
-            cat,
-            m["vector"],
-            r.get("risk_level", "-"),
-            r.get("risk_description", "-"),
-            r.get("evidence", "-"),
-            r.get("recommendations", "-"),
-            m["frameworks"],
+            safe_val(r.get("scenario_id", "-"), "-"),
+            safe_val(cat, "Not Applicable"),
+            safe_val(m["vector"], "Not Applicable"),
+            get_risk_status(r.get("risk_level", None)),
+            safe_val(r.get("risk_description", None), "No issue detected"),
+            safe_val(r.get("evidence", None), "N/A"),
+            safe_val(r.get("recommendations", None), "N/A"),
+            safe_val(m["frameworks"], "Not Applicable"),
         ])
     findings_tbl = Table(findings_data, repeatRows=1, hAlign="LEFT", colWidths=[70, 80, 100, 60, 170, 120, 120, 120])
     findings_tbl.setStyle(TableStyle([
@@ -98,10 +119,58 @@ def generate_report(results):
         ("ALIGN", (3,1), (3,-1), "CENTER"),
         ("VALIGN", (0,0), (-1,-1), "TOP"),
     ]))
-    elements.append(findings_tbl)
+    return findings_tbl
+
+def generate_report(results):
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(letter), leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
+    styles = getSampleStyleSheet()
+    styleN = styles["Normal"]
+    styleB = styles["Heading2"]
+    styleSmall = ParagraphStyle(name='Small', fontSize=8, leading=10)
+
+    elements = []
+    elements.append(Paragraph("<b>AI Security Assessment Report</b>", styles["Title"]))
+    elements.append(Spacer(1, 18))
+
+    prompt_attacks, context_attacks = split_results_by_type(results)
+
+    # ===== PROMPT ATTACKS SECTION =====
+    if prompt_attacks:
+        # --- Risk Graphs for Prompt Attacks
+        risk_levels = Counter([get_risk_status(r.get("risk_level", None)) for r in prompt_attacks])
+        category_hits = Counter([_map_category(r.get("category", "Unknown"))["vector"] for r in prompt_attacks])
+
+        elements.append(Paragraph("<b>Prompt Attack Risk Levels</b>", styleB))
+        elements.append(plot_bar(risk_levels, "Prompt Attack: Risk Levels", "Count"))
+        elements.append(Spacer(1, 10))
+
+        elements.append(Paragraph("<b>Prompt Attack Vectors Detected</b>", styleB))
+        elements.append(plot_bar(category_hits, "Prompt Attack Vectors", "Cases"))
+        elements.append(Spacer(1, 14))
+
+        elements.append(Paragraph("<b>Prompt Attack Findings</b>", styleB))
+        elements.append(findings_table_block(prompt_attacks, "Prompt Attack Findings"))
+        elements.append(PageBreak())
+
+    # ===== CONTEXT SCENARIOS SECTION =====
+    if context_attacks:
+        risk_levels = Counter([get_risk_status(r.get("risk_level", None)) for r in context_attacks])
+        category_hits = Counter([_map_category(r.get("category", "Unknown"))["vector"] for r in context_attacks])
+
+        elements.append(Paragraph("<b>Context Scenario Risk Levels</b>", styleB))
+        elements.append(plot_bar(risk_levels, "Context Scenarios: Risk Levels", "Count"))
+        elements.append(Spacer(1, 10))
+
+        elements.append(Paragraph("<b>Context Scenario Vectors Detected</b>", styleB))
+        elements.append(plot_bar(category_hits, "Context Scenario Vectors", "Cases"))
+        elements.append(Spacer(1, 14))
+
+        elements.append(Paragraph("<b>Context Scenario Findings</b>", styleB))
+        elements.append(findings_table_block(context_attacks, "Context Scenario Findings"))
+        elements.append(PageBreak())
 
     # ==== LEGEND ====
-    elements.append(PageBreak())
     elements.append(Paragraph("<b>Legend & Framework References</b>", styles["Heading3"]))
     elements.append(Spacer(1, 8))
     legend = [
@@ -138,4 +207,3 @@ def generate_report(results):
     pdf = buf.getvalue()
     buf.close()
     return pdf
-
