@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 import pandas as pd
+import os
 from datetime import datetime
 
 # --- Custom Modules ---
@@ -264,10 +265,25 @@ if mode == "Prompt Bank":
 # ========================================================================
 elif mode == "Context Scenarios":
     st.subheader("Context Scenario Workflow")
-    uploaded_file = st.file_uploader("Upload JSON scenario(s)", type=["json"])
-    if uploaded_file:
-        scenarios = load_scenarios_from_json(uploaded_file)
-        st.success(f"Loaded {len(scenarios)} scenario(s).")
+
+    # --- List all available scenario files in 'scenarios/' ---
+    scenario_dir = "scenarios"
+    scenario_files = [
+        f for f in os.listdir(scenario_dir)
+        if f.endswith(".json") and not f.startswith(".")
+    ]
+    selected_file = st.sidebar.selectbox(
+        "Choose a scenario file",
+        scenario_files,
+        index=0 if "scenarios_full_suite.json" in scenario_files else 0
+    )
+
+    # --- Load & Preview Scenarios ---
+    scenarios = []
+    if selected_file:
+        scenario_path = os.path.join(scenario_dir, selected_file)
+        scenarios = load_scenarios_from_json(scenario_path)
+        st.success(f"Loaded {len(scenarios)} scenario(s) from `{selected_file}`.")
         for s in scenarios:
             with st.expander(f"{s['scenario_id']}: {s['description'][:70]}", expanded=False):
                 for i, turn in enumerate(s['turns']):
@@ -299,3 +315,6 @@ elif mode == "Context Scenarios":
         st.download_button("Download Results (CSV)", data=df.to_csv(index=False), file_name="context_results.csv")
         st.download_button("Download Results (PDF)", data=generate_report(st.session_state['last_run']), file_name="context_results.pdf")
         st.bar_chart(df["risk_level"].value_counts())
+
+    st.sidebar.markdown("---")
+    st.sidebar.info("🗂️ Put your scenario JSON files in the `scenarios/` folder.")
