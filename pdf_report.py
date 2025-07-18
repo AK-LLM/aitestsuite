@@ -1,80 +1,141 @@
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from io import BytesIO
-from risk_matrix import RISK_MATRIX
+# pdf_report.py
 
-def safe(val):
-    if val is None:
-        return "-"
-    if isinstance(val, list):
-        return "; ".join(str(x) for x in val if x)
-    return str(val)
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.lib import colors
+from reportlab.platypus import (
+    SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+)
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+import io
 
-def draw_risk_matrix(c, y, width):
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(50, y, "Risk Matrix Legend")
-    y -= 16
-    c.setFont("Helvetica", 10)
-    for row in RISK_MATRIX:
-        c.drawString(60, y, f"{row['level']} - {row['definition']}")
-        y -= 13
-        c.drawString(80, y, f"Example: {row['example']}")
-        y -= 13
-        c.drawString(80, y, f"Action: {row['action']}")
-        y -= 15
-    y -= 10
-    return y
+# Cross-mapping for frameworks (extend as needed)
+CATEGORY_MAP = {
+    "Prompt Injection": {"vector": "Prompt Injection", "frameworks": "OWASP LLM #1, MITRE ATLAS ATC-PRM"},
+    "Roleplay & Jailbreak": {"vector": "Jailbreak/Role Abuse", "frameworks": "OWASP LLM #2, MITRE ATLAS ATC-ROL"},
+    "Context Carryover": {"vector": "Context Leakage", "frameworks": "OWASP LLM #4, MITRE ATLAS ATC-CTX"},
+    "PII & Privacy": {"vector": "PII Exposure", "frameworks": "NIST 800-53 PL-4, GDPR"},
+    "Bias & Toxicity": {"vector": "Bias/Toxicity", "frameworks": "OWASP LLM #5"},
+    "Long Context & Overflow": {"vector": "Memory/Overflow", "frameworks": "OWASP LLM #4"},
+    "MCP/Context Manipulation": {"vector": "Context Manipulation", "frameworks": "MITRE ATLAS ATC-CTX"},
+    "Fact/Fiction Shift": {"vector": "Fact Consistency", "frameworks": "NIST 800-53 SI-4"},
+    "Edge Cases": {"vector": "Adversarial Input", "frameworks": "MITRE ATLAS ATC-ADV"},
+    "Complex Dialogues": {"vector": "Social Engineering", "frameworks": "MITRE ATLAS ATC-ENG"},
+    "Fine-grained Hallucination": {"vector": "Hallucination", "frameworks": "OWASP LLM #6"},
+    "Regulatory": {"vector": "Compliance", "frameworks": "GDPR, HIPAA"},
+    "Ethics": {"vector": "Value Alignment", "frameworks": "OECD, UNESCO"},
+    "Stress": {"vector": "Robustness/Scalability", "frameworks": "OWASP LLM #10"},
+}
 
-def generate_report(scenario_results):
-    buffer = BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    width, height = letter
-    y = height - 35
+def _map_category(cat):
+    return CATEGORY_MAP.get(cat, {"vector": cat, "frameworks": "-"})
 
-    c.setFont("Helvetica-Bold", 18)
-    c.drawString(50, y, "AI Context-Aware Risk Assessment Report")
-    y -= 28
+def generate_report(results):
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(letter), leftMargin=18, rightMargin=18, topMargin=18, bottomMargin=18)
+    styles = getSampleStyleSheet()
+    styleN = styles["Normal"]
+    styleB = styles["Heading2"]
+    styleSmall = ParagraphStyle(name='Small', fontSize=8, leading=10)
 
-    # Risk Matrix Legend
-    y = draw_risk_matrix(c, y, width)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(50, y, "Scenario Findings")
-    y -= 18
+    elements = []
+    elements.append(Paragraph("<b>AI Context Security Assessment Report</b>", styles["Title"]))
+    elements.append(Spacer(1, 18))
 
-    c.setFont("Helvetica", 10)
-    for idx, item in enumerate(scenario_results):
-        if y < 130:
-            c.showPage()
-            y = height - 50
-            c.setFont("Helvetica-Bold", 12)
-            c.drawString(50, y, "Scenario Findings (cont’d)")
-            y -= 18
-            c.setFont("Helvetica", 10)
+    # ==== SUMMARY COVERAGE ====
+    metric_set = set()
+    category_hits = {}
+    for r in results:
+        cat = r.get("category", "Unknown")
+        metric = _map_category(cat)["vector"]
+        metric_set.add(metric)
+        category_hits[metric] = category_hits.get(metric, 0) + 1
 
-        c.setFont("Helvetica-Bold", 11)
-        c.drawString(55, y, f"Scenario {idx+1}: {safe(item.get('scenario_id'))}")
-        y -= 14
-        c.setFont("Helvetica", 10)
+    elements.append(Paragraph("<b>Summary Coverage Matrix</b>", styleB))
+    coverage_data = [["Security Metric / Attack Vector", "Cases Detected"]]
+    for metric in sorted(metric_set):
+        coverage_data.append([metric, str(category_hits.get(metric, 0))])
+    coverage_tbl = Table(coverage_data, hAlign="LEFT", colWidths=[240, 100])
+    coverage_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#223344")),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+        ("GRID", (0,0), (-1,-1), 0.25, colors.grey),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE", (0,0), (-1,0), 11),
+        ("FONTNAME", (0,1), (-1,-1), "Helvetica"),
+        ("FONTSIZE", (0,1), (-1,-1), 9),
+    ]))
+    elements.append(coverage_tbl)
+    elements.append(Spacer(1, 14))
 
-        # Context trace
-        c.drawString(60, y, f"Context Trace: {safe(item.get('context_trace'))[:120]}")
-        y -= 12
-        # Show descriptive finding (risk/why/evidence/rec)
-        c.drawString(60, y, f"Risk Level: {item.get('risk_level')} | {item.get('risk_description')}")
-        y -= 12
-        c.drawString(60, y, f"Evidence: {safe(item.get('evidence'))}")
-        y -= 12
-        c.drawString(60, y, f"Recommendation: {safe(item.get('recommendations'))}")
-        y -= 12
-        c.drawString(60, y, f"Root Cause: {safe(item.get('root_cause'))}")
-        y -= 10
-        c.drawString(60, y, f"Expected: {safe(item.get('expected_behavior'))}")
-        y -= 12
-        c.drawString(60, y, f"Tags: {safe(item.get('tags'))}")
-        y -= 12
-        c.drawString(60, y, f"Description: {safe(item.get('description'))}")
-        y -= 14
+    # ==== DETAILED FINDINGS ====
+    elements.append(Paragraph("<b>Detailed Scenario Findings</b>", styleB))
 
-    c.save()
-    buffer.seek(0)
-    return buffer.getvalue()
+    findings_data = [[
+        "Scenario ID", "Category", "Attack Vector", "Severity", "Risk Description", "Evidence", "Recommendation", "Framework Mapping"
+    ]]
+    for r in results:
+        cat = r.get("category", "Unknown")
+        m = _map_category(cat)
+        findings_data.append([
+            r.get("scenario_id", "-"),
+            cat,
+            m["vector"],
+            r.get("risk_level", "-"),
+            r.get("risk_description", "-"),
+            r.get("evidence", "-"),
+            r.get("recommendations", "-"),
+            m["frameworks"],
+        ])
+    findings_tbl = Table(findings_data, repeatRows=1, hAlign="LEFT", colWidths=[70, 80, 100, 60, 170, 120, 120, 120])
+    findings_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#223344")),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+        ("GRID", (0,0), (-1,-1), 0.18, colors.grey),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTSIZE", (0,0), (-1,0), 9),
+        ("FONTNAME", (0,1), (-1,-1), "Helvetica"),
+        ("FONTSIZE", (0,1), (-1,-1), 8),
+        ("ALIGN", (3,1), (3,-1), "CENTER"),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+    ]))
+    elements.append(findings_tbl)
+
+    # ==== LEGEND ====
+    elements.append(PageBreak())
+    elements.append(Paragraph("<b>Legend & Framework References</b>", styles["Heading3"]))
+    elements.append(Spacer(1, 8))
+    legend = [
+        ["Attack Vector", "Description"],
+        ["Prompt Injection", "Tricking model to ignore prior instructions or security boundaries"],
+        ["Jailbreak/Role Abuse", "Getting the AI to break its rules via roleplay or prompt chaining"],
+        ["Context Leakage", "Leaking information from previous turns or sessions"],
+        ["PII Exposure", "Revealing personal or confidential data"],
+        ["Bias/Toxicity", "Producing biased, unfair, or toxic output"],
+        ["Memory/Overflow", "Losing context, hallucinating or mixing facts in long chains"],
+        ["Compliance", "Failure to meet GDPR, HIPAA, or similar standards"],
+        ["Robustness/Scalability", "Model crashes, instability under stress/flood"],
+        ["Value Alignment", "Responding to manipulation or ethical traps"],
+    ]
+    legend_tbl = Table(legend, hAlign="LEFT", colWidths=[120, 340])
+    legend_tbl.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,0), colors.HexColor("#3b4252")),
+        ("TEXTCOLOR", (0,0), (-1,0), colors.white),
+        ("FONTNAME", (0,0), (-1,0), "Helvetica-Bold"),
+        ("FONTNAME", (0,1), (-1,-1), "Helvetica"),
+        ("FONTSIZE", (0,0), (-1,-1), 8),
+        ("ALIGN", (0,0), (-1,-1), "LEFT"),
+        ("VALIGN", (0,0), (-1,-1), "TOP"),
+        ("GRID", (0,0), (-1,-1), 0.13, colors.grey),
+    ]))
+    elements.append(legend_tbl)
+    elements.append(Spacer(1, 6))
+    elements.append(Paragraph(
+        "Framework references: OWASP Top 10 for LLMs, MITRE ATLAS, NIST 800-53, GDPR, HIPAA, etc.",
+        styleSmall
+    ))
+
+    doc.build(elements)
+    pdf = buf.getvalue()
+    buf.close()
+    return pdf
+
