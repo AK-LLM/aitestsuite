@@ -1,5 +1,4 @@
 import streamlit as st
-import os
 import json
 import pandas as pd
 from datetime import datetime
@@ -12,7 +11,7 @@ from bias_toxicity import bias_test
 from mcp_test import mcp_context_test
 from session_utils import save_session, load_session
 from pdf_report import generate_report
-from scenario_utils import flatten_scenario_for_report
+from scenario_utils import load_scenarios_from_json, flatten_scenario_for_report
 from risk_matrix import RISK_MATRIX
 from utils import (
     show_help,
@@ -48,6 +47,9 @@ with st.expander("Risk Matrix Legend", expanded=True):
 if mode == "Prompt Bank":
     # Prompt Domain Selection & Management
     st.subheader("Prompt Bank Workflow")
+    ai_endpoint = st.text_input(
+        "Enter AI Model Endpoint URL:", placeholder="https://your-ai-api.com/predict"
+    )
     all_domains = list(load_prompt_bank().keys())
     selected_domains = [
         d for d in all_domains if st.sidebar.checkbox(d, value=(d in ["Security", "Hallucination", "Robustness"]))
@@ -102,10 +104,6 @@ if mode == "Prompt Bank":
     if st.sidebar.button("Show Help & Workflow"):
         show_help()
 
-    ai_endpoint = st.text_input(
-        "Enter AI Model Endpoint URL:", placeholder="https://your-ai-api.com/predict"
-    )
-
     # Gather all prompts
     all_prompts = []
     for d in selected_domains:
@@ -138,7 +136,7 @@ if mode == "Prompt Bank":
             st.warning("No history found yet.")
 
     results = []
-    root_causes = {}   # For root cause panel
+    root_causes = {}
     if load_btn:
         loaded = load_session()
         if "error" in loaded:
@@ -190,7 +188,6 @@ if mode == "Prompt Bank":
                         recs = []
                         root = []
                         for tool, res in assessments.items():
-                            # Expect each res to have: risk_level/status, explanation, evidence, recommendation, confidence
                             if "risk_level" in res and res["risk_level"] == "High Risk":
                                 risk_score += 3
                                 recs.append(res.get("recommendation", ""))
@@ -201,7 +198,6 @@ if mode == "Prompt Bank":
                                 recs.append(res.get("recommendation", ""))
                                 evidence.append(res.get("evidence", ""))
                                 root.append(f"{tool} (med)")
-                            # Show explanations/confidence
                             with st.expander(f"Show {tool} Explanation", expanded=False):
                                 st.markdown(f"**Explanation:** {res.get('explanation', '-')}")
                                 st.markdown(f"**Evidence:** {res.get('evidence', '-')}")
@@ -265,68 +261,43 @@ if mode == "Prompt Bank":
 # ========================================================================
 elif mode == "Context Scenarios":
     st.subheader("Context Scenario Workflow")
-
-    uploaded_file = st.file_uploader("Upload JSON scenario(s)", type=["json"])
-
-    # Dynamically list scenario .json files in the /scenarios folder (no preloading)
-    scenario_files = []
-    try:
-        scenario_folder = "scenarios"
-        scenario_files = [f for f in os.listdir(scenario_folder) if f.endswith(".json")]
-    except Exception:
-        scenario_files = []
-
-    selected_scenario_file = st.selectbox(
-        "Or select a scenario JSON file from /scenarios", ["--Select--"] + scenario_files
+    ai_endpoint_context = st.text_input(
+        "Enter AI Model Endpoint URL for Context Scenarios:",
+        placeholder="https://your-ai-api.com/predict"
     )
-
+    uploaded_file = st.file_uploader("Upload JSON scenario(s)", type=["json"])
     scenarios = None
-    scenario_load_error = None
-
-    # Only load when user takes action
-    if uploaded_file is not None:
+    if uploaded_file:
         try:
-            content = uploaded_file.read()
-            scenarios = json.loads(content)
-            st.success(f"Loaded {len(scenarios)} scenario(s) from uploaded file.")
+            scenarios = load_scenarios_from_json(uploaded_file)
+            if not isinstance(scenarios, list) or not all('scenario_id' in s for s in scenarios):
+                raise ValueError("JSON format error: Must be a list of scenario objects each with 'scenario_id'.")
+            st.success(f"Loaded {len(scenarios)} scenario(s).")
+            for s in scenarios:
+                with st.expander(f"{s['scenario_id']}: {s['description'][:70]}", expanded=False):
+                    for i, turn in enumerate(s['turns']):
+                        st.markdown(f"**Turn {i+1}** ({turn['role']}): {turn['content']}")
+                    st.markdown(f"**Expected:** {s.get('expected_behavior','')}")
+                    st.markdown(f"**Tags:** {', '.join(s.get('tags', []))}")
         except Exception as e:
-            scenario_load_error = f"❌ Error reading uploaded JSON: {e}"
-    elif selected_scenario_file and selected_scenario_file != "--Select--":
-        try:
-            with open(os.path.join(scenario_folder, selected_scenario_file), "r", encoding="utf-8") as f:
-                scenarios = json.load(f)
-            st.success(f"Loaded {len(scenarios)} scenario(s) from {selected_scenario_file}.")
-        except Exception as e:
-            scenario_load_error = f"❌ Error reading scenario JSON: {e}"
+            st.error(f"Could not parse scenario file: {e}")
+            scenarios = None
 
-    if scenario_load_error:
-        st.error(scenario_load_error)
-
-    # Proceed only if scenarios loaded
-    if scenarios:
-        for s in scenarios:
-            with st.expander(f"{s.get('scenario_id','scenario')}: {s.get('description','')[:70]}", expanded=False):
-                for i, turn in enumerate(s.get('turns', [])):
-                    st.markdown(f"**Turn {i+1}** ({turn.get('role','')}): {turn.get('content','')}")
-                st.markdown(f"**Expected:** {s.get('expected_behavior','')}")
-                st.markdown(f"**Tags:** {', '.join(s.get('tags', []))}")
-
-        if st.button("Run Context Scenarios"):
-            # You can plug in your real context assessment pipeline here
-            scenario_results = []
-            for scenario in scenarios:
-                # Example: plug your security/context assessment pipeline here
-                # For now, using a placeholder high risk for demo
-                result = {
-                    "result": "Flagged",
-                    "risk_level": "High",
-                    "risk_description": "Model leaked prior turn information (context carryover).",
-                    "evidence": "Model repeated secret from turn 1 in turn 3.",
-                    "recommendations": "Enforce session boundaries in the model.",
-                    "root_cause": "Context carryover; no isolation between turns."
-                }
-                scenario_results.append(flatten_scenario_for_report(scenario, result))
-            st.session_state['last_run'] = scenario_results
+    if scenarios and st.button("Run Context Scenarios"):
+        # TODO: Plug in your actual context test pipeline, e.g. call ai_endpoint_context if needed.
+        scenario_results = []
+        for scenario in scenarios:
+            # Example result: replace with your real assessment
+            result = {
+                "result": "Flagged",
+                "risk_level": "High",
+                "risk_description": "Model leaked prior turn information (context carryover).",
+                "evidence": "Model repeated secret from turn 1 in turn 3.",
+                "recommendations": "Enforce session boundaries in the model.",
+                "root_cause": "Context carryover; no isolation between turns."
+            }
+            scenario_results.append(flatten_scenario_for_report(scenario, result))
+        st.session_state['last_run'] = scenario_results
 
     if 'last_run' in st.session_state:
         st.subheader("Scenario Results")
@@ -335,5 +306,3 @@ elif mode == "Context Scenarios":
         st.download_button("Download Results (CSV)", data=df.to_csv(index=False), file_name="context_results.csv")
         st.download_button("Download Results (PDF)", data=generate_report(st.session_state['last_run']), file_name="context_results.pdf")
         st.bar_chart(df["risk_level"].value_counts())
-
-# End of file
